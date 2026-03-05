@@ -18,6 +18,7 @@
       <div class="badge-row">
         <span id="runState" class="pill idle">Idle</span>
         <span id="runMode" class="pill secondary">Mode: -</span>
+        <input id="apiKeyInput" type="password" placeholder="X-API-Key (optional)">
       </div>
     </header>
 
@@ -29,6 +30,31 @@
       <button id="runAllBtn" class="accent">Run All</button>
       <button id="runFailedBtn">Rerun Failed</button>
       <button id="runChangedBtn">Rerun Changed</button>
+    </section>
+
+    <section class="panel">
+      <h2>Study Path</h2>
+      <p class="helper">
+        Set the `.cfdst` file used by runs and introspection. Use Discover to find studies on this machine.
+      </p>
+      <div class="study-row">
+        <input id="studyPathInput" type="text" placeholder="C:/path/to/your/model.cfdst">
+        <button id="discoverStudiesBtn">Discover Studies</button>
+        <button id="applyStudyPathBtn">Apply Path To Config</button>
+      </div>
+      <div class="study-row">
+        <select id="studyCandidates" size="5"></select>
+        <button id="useSelectedStudyBtn">Use Selected Study</button>
+      </div>
+    </section>
+
+    <section id="solveBanner" class="banner hidden">
+      <strong>Solve is disabled.</strong>
+      Current runs use existing/cached results unless `solve.enabled` is set to `true`.
+    </section>
+
+    <section id="authBanner" class="banner neutral hidden">
+      API key protection is enabled on this server. Set `X-API-Key` in the field at the top-right.
     </section>
 
     <section class="grid">
@@ -61,6 +87,7 @@
       <h2>Latest Run Outputs</h2>
       <div id="resultsLinks" class="links"></div>
       <div id="resultsTableWrap"></div>
+      <div id="failureWrap"></div>
       <div id="chartsWrap" class="charts"></div>
     </section>
   </main>

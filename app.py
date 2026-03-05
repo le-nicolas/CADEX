@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import os
 from pathlib import Path
 from threading import Lock, Thread
 from typing import Any
@@ -12,6 +13,7 @@ from cfd_automation import AutomationRunner
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 runner = AutomationRunner(PROJECT_ROOT)
+API_KEY = os.environ.get("CFD_AUTOMATION_API_KEY", "").strip()
 
 app = Flask(
     __name__,
@@ -54,9 +56,27 @@ def enrich_summary(summary: dict[str, Any]) -> dict[str, Any]:
         item["summary_csv_url"] = to_runtime_url(item.get("summary_csv", ""))
         item["metrics_csv_url"] = to_runtime_url(item.get("metrics_csv", ""))
         item["screenshot_urls"] = [to_runtime_url(path) for path in item.get("screenshots", [])]
+        item["failure_reason"] = item.get("failure_reason") or item.get("error", "")
         case_results.append(item)
     out["case_results"] = case_results
     return out
+
+
+def require_api_key() -> Any | None:
+    if not API_KEY:
+        return None
+    provided = str(request.headers.get("X-API-Key", "")).strip()
+    if provided == API_KEY:
+        return None
+    return (
+        jsonify(
+            {
+                "ok": False,
+                "error": "Unauthorized. Provide X-API-Key header.",
+            }
+        ),
+        401,
+    )
 
 
 class RunManager:
@@ -94,6 +114,12 @@ class RunManager:
                 self._append_log(
                     f"Run started. mode={self._state['mode']} selected={self._state['selected_case_count']}"
                 )
+                if event.get("study_path"):
+                    self._append_log(f"Study: {event.get('study_path')}")
+                if not bool(event.get("solve_enabled", False)):
+                    self._append_log(
+                        "Warning: solve.enabled is false. Outputs will use existing/cached results."
+                    )
             elif event_type == "case_started":
                 self._state["current_case"] = event.get("case_id", "")
                 self._append_log(
@@ -166,6 +192,9 @@ def api_get_config():
 
 @app.post("/api/config")
 def api_save_config():
+    auth = require_api_key()
+    if auth:
+        return auth
     payload = request.get_json(force=True, silent=True) or {}
     if not isinstance(payload, dict):
         return jsonify({"ok": False, "error": "Request body must be a JSON object."}), 400
@@ -180,6 +209,9 @@ def api_get_cases():
 
 @app.post("/api/cases")
 def api_save_cases():
+    auth = require_api_key()
+    if auth:
+        return auth
     payload = request.get_json(force=True, silent=True) or {}
     csv_text = payload.get("csv", "")
     if not isinstance(csv_text, str):
@@ -190,6 +222,9 @@ def api_save_cases():
 
 @app.post("/api/introspect")
 def api_introspect():
+    auth = require_api_key()
+    if auth:
+        return auth
     payload = request.get_json(force=True, silent=True) or {}
     study_path = payload.get("study_path")
     result = runner.introspect(study_override=study_path)
@@ -200,8 +235,27 @@ def api_introspect():
     return jsonify({"ok": False, "result": result}), 500
 
 
+@app.get("/api/studies")
+def api_studies():
+    try:
+        max_results = int(request.args.get("max_results", "120"))
+    except ValueError:
+        max_results = 120
+    try:
+        max_depth = int(request.args.get("max_depth", "5"))
+    except ValueError:
+        max_depth = 5
+    max_results = max(1, min(max_results, 1000))
+    max_depth = max(1, min(max_depth, 10))
+    studies = runner.discover_studies(max_results=max_results, max_depth=max_depth)
+    return jsonify({"ok": True, "count": len(studies), "studies": studies})
+
+
 @app.post("/api/run")
 def api_run():
+    auth = require_api_key()
+    if auth:
+        return auth
     payload = request.get_json(force=True, silent=True) or {}
     mode = str(payload.get("mode", "all")).lower()
     started, message = run_manager.start(mode)
@@ -210,7 +264,9 @@ def api_run():
 
 @app.get("/api/status")
 def api_status():
-    return jsonify(run_manager.get())
+    state = run_manager.get()
+    state["auth_required"] = bool(API_KEY)
+    return jsonify(state)
 
 
 @app.get("/api/latest-run")

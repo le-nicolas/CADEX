@@ -12,9 +12,9 @@ from .utils import stable_hash
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "study": {
-        "template_model": "C:/Users/User/Downloads/Kani yawa/Kani yawa.cfdst",
-        "design_name": "Design 1",
-        "scenario_name": "Scenario 1",
+        "template_model": "",
+        "design_name": "",
+        "scenario_name": "",
     },
     "automation": {
         "cfd_executable": "C:/Program Files/Autodesk/CFD 2026/CFD.exe",

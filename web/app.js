@@ -9,6 +9,7 @@ const ui = {
   currentCase: document.getElementById("currentCase"),
   resultsLinks: document.getElementById("resultsLinks"),
   resultsTableWrap: document.getElementById("resultsTableWrap"),
+  failureWrap: document.getElementById("failureWrap"),
   chartsWrap: document.getElementById("chartsWrap"),
   reloadBtn: document.getElementById("reloadBtn"),
   saveConfigBtn: document.getElementById("saveConfigBtn"),
@@ -17,12 +18,45 @@ const ui = {
   runAllBtn: document.getElementById("runAllBtn"),
   runFailedBtn: document.getElementById("runFailedBtn"),
   runChangedBtn: document.getElementById("runChangedBtn"),
+  studyPathInput: document.getElementById("studyPathInput"),
+  discoverStudiesBtn: document.getElementById("discoverStudiesBtn"),
+  applyStudyPathBtn: document.getElementById("applyStudyPathBtn"),
+  studyCandidates: document.getElementById("studyCandidates"),
+  useSelectedStudyBtn: document.getElementById("useSelectedStudyBtn"),
+  solveBanner: document.getElementById("solveBanner"),
+  authBanner: document.getElementById("authBanner"),
+  apiKeyInput: document.getElementById("apiKeyInput"),
 };
 
+let currentConfig = null;
+
+function getApiKey() {
+  const key = (ui.apiKeyInput.value || localStorage.getItem("cfd_api_key") || "").trim();
+  return key;
+}
+
+function persistApiKey() {
+  const key = getApiKey();
+  if (key) {
+    localStorage.setItem("cfd_api_key", key);
+  } else {
+    localStorage.removeItem("cfd_api_key");
+  }
+}
+
 async function callApi(url, options = {}) {
+  const headers = { ...(options.headers || {}) };
+  if (options.method && options.method !== "GET" && options.method !== "HEAD") {
+    headers["Content-Type"] = "application/json";
+  }
+  const apiKey = getApiKey();
+  if (apiKey) {
+    headers["X-API-Key"] = apiKey;
+  }
+
   const response = await fetch(url, {
-    headers: { "Content-Type": "application/json" },
     ...options,
+    headers,
   });
   const payload = await response.json();
   if (!response.ok) {
@@ -36,6 +70,11 @@ function flash(message) {
   ui.logs.textContent = `[${stamp}] ${message}\n` + ui.logs.textContent;
 }
 
+function updateSolveBanner() {
+  const solveEnabled = Boolean(currentConfig && currentConfig.solve && currentConfig.solve.enabled);
+  ui.solveBanner.classList.toggle("hidden", solveEnabled);
+}
+
 function updateStatusView(status) {
   const running = Boolean(status.running);
   ui.runState.textContent = running ? "Running" : "Idle";
@@ -43,7 +82,14 @@ function updateStatusView(status) {
   ui.runMode.textContent = `Mode: ${status.mode || "-"}`;
   ui.caseCounter.textContent = `${status.completed_case_count || 0} / ${status.selected_case_count || 0}`;
   ui.currentCase.textContent = `Current: ${status.current_case || "-"}`;
-  ui.logs.textContent = (status.logs || []).slice().reverse().join("\n");
+
+  const logLines = (status.logs || []).slice().reverse();
+  if (status.last_error) {
+    logLines.unshift(`[ERROR] ${status.last_error}`);
+  }
+  ui.logs.textContent = logLines.join("\n");
+
+  ui.authBanner.classList.toggle("hidden", !status.auth_required);
 }
 
 function renderLinks(summary) {
@@ -78,7 +124,7 @@ function renderResultsTable(summary) {
     const metrics = row.metrics || {};
     Object.keys(metrics).forEach((key) => metricKeys.add(key));
   }
-  const columns = ["case_id", "success", ...Array.from(metricKeys)];
+  const columns = ["case_id", "success", "failure_reason", ...Array.from(metricKeys)];
 
   const table = document.createElement("table");
   const thead = document.createElement("thead");
@@ -98,6 +144,8 @@ function renderResultsTable(summary) {
       const td = document.createElement("td");
       if (column === "success") {
         td.textContent = row.success ? "true" : "false";
+      } else if (column === "failure_reason") {
+        td.textContent = row.failure_reason || row.error || "";
       } else if (column in row) {
         td.textContent = row[column] ?? "";
       } else {
@@ -109,6 +157,26 @@ function renderResultsTable(summary) {
   }
   table.appendChild(tbody);
   ui.resultsTableWrap.appendChild(table);
+}
+
+function renderFailureDetails(summary) {
+  ui.failureWrap.innerHTML = "";
+  const rows = summary.case_results || [];
+  const failed = rows.filter((row) => !row.success);
+  if (!failed.length) {
+    return;
+  }
+  const title = document.createElement("h3");
+  title.textContent = "Failure Reasons";
+  ui.failureWrap.appendChild(title);
+
+  for (const row of failed) {
+    const div = document.createElement("div");
+    div.className = "failure-item";
+    const reason = row.failure_reason || row.error || "Unknown failure";
+    div.textContent = `${row.case_id}: ${reason}`;
+    ui.failureWrap.appendChild(div);
+  }
 }
 
 function renderCharts(summary) {
@@ -126,12 +194,46 @@ function renderCharts(summary) {
 function renderSummary(summary) {
   renderLinks(summary);
   renderResultsTable(summary);
+  renderFailureDetails(summary);
   renderCharts(summary);
+}
+
+function syncStudyPathInput() {
+  const path = (currentConfig && currentConfig.study && currentConfig.study.template_model) || "";
+  ui.studyPathInput.value = path;
+}
+
+function applyStudyPathIntoConfig(pathValue) {
+  const path = (pathValue || "").trim();
+  const parsed = JSON.parse(ui.configText.value);
+  if (!parsed.study || typeof parsed.study !== "object") {
+    parsed.study = {};
+  }
+  parsed.study.template_model = path;
+  ui.configText.value = JSON.stringify(parsed, null, 2);
+  currentConfig = parsed;
+  updateSolveBanner();
+}
+
+function fillStudyCandidates(studies) {
+  ui.studyCandidates.innerHTML = "";
+  for (const item of studies) {
+    const option = document.createElement("option");
+    option.value = item.path;
+    const dateText = item.modified_epoch
+      ? new Date(item.modified_epoch * 1000).toLocaleString()
+      : "-";
+    option.textContent = `${item.path}  (modified: ${dateText})`;
+    ui.studyCandidates.appendChild(option);
+  }
 }
 
 async function loadConfig() {
   const config = await callApi("/api/config");
+  currentConfig = config;
   ui.configText.value = JSON.stringify(config, null, 2);
+  syncStudyPathInput();
+  updateSolveBanner();
 }
 
 async function saveConfig() {
@@ -140,6 +242,9 @@ async function saveConfig() {
     method: "POST",
     body: JSON.stringify(parsed),
   });
+  currentConfig = parsed;
+  syncStudyPathInput();
+  updateSolveBanner();
   flash("Config saved.");
 }
 
@@ -156,11 +261,17 @@ async function saveCases() {
   flash("Cases CSV saved.");
 }
 
+async function discoverStudies() {
+  const payload = await callApi("/api/studies");
+  fillStudyCandidates(payload.studies || []);
+  flash(`Discovered ${payload.count || 0} study file(s).`);
+}
+
 async function runIntrospection() {
   ui.introspection.textContent = "Running introspection...";
   const payload = await callApi("/api/introspect", {
     method: "POST",
-    body: JSON.stringify({}),
+    body: JSON.stringify({ study_path: ui.studyPathInput.value.trim() || undefined }),
   });
   ui.introspection.textContent = JSON.stringify(payload.result.data || {}, null, 2);
   flash("Introspection completed.");
@@ -192,6 +303,15 @@ async function boot() {
   }
 }
 
+ui.apiKeyInput.value = localStorage.getItem("cfd_api_key") || "";
+ui.apiKeyInput.addEventListener("change", persistApiKey);
+ui.apiKeyInput.addEventListener("keyup", (event) => {
+  if (event.key === "Enter") {
+    persistApiKey();
+    flash("API key updated.");
+  }
+});
+
 ui.reloadBtn.addEventListener("click", async () => {
   await boot();
   flash("Reloaded config, cases, status, and latest run.");
@@ -210,6 +330,38 @@ ui.saveCasesBtn.addEventListener("click", async () => {
     await saveCases();
   } catch (err) {
     flash(`Save cases failed: ${err.message}`);
+  }
+});
+
+ui.discoverStudiesBtn.addEventListener("click", async () => {
+  try {
+    await discoverStudies();
+  } catch (err) {
+    flash(`Study discovery failed: ${err.message}`);
+  }
+});
+
+ui.applyStudyPathBtn.addEventListener("click", () => {
+  try {
+    applyStudyPathIntoConfig(ui.studyPathInput.value);
+    flash("Study path applied to config editor. Click 'Save Config' to persist.");
+  } catch (err) {
+    flash(`Apply study path failed: ${err.message}`);
+  }
+});
+
+ui.useSelectedStudyBtn.addEventListener("click", () => {
+  const selected = ui.studyCandidates.value;
+  if (!selected) {
+    flash("No discovered study selected.");
+    return;
+  }
+  ui.studyPathInput.value = selected;
+  try {
+    applyStudyPathIntoConfig(selected);
+    flash("Selected discovered study path applied to config editor.");
+  } catch (err) {
+    flash(`Use selected study failed: ${err.message}`);
   }
 });
 

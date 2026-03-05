@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 from pathlib import Path
@@ -60,6 +61,11 @@ class AutomationRunner:
         study_path = study_override or cfg.get("study", {}).get("template_model")
         if not study_path:
             raise ValueError("No study path configured.")
+        study_file = Path(str(study_path))
+        if study_file.suffix.lower() != ".cfdst":
+            raise ValueError(f"Study path must point to a .cfdst file: {study_path}")
+        if not study_file.exists():
+            raise ValueError(f"Study file does not exist: {study_path}")
 
         output_path = (self.introspection_dir / "introspection.json").resolve()
         if output_path.exists():
@@ -105,9 +111,105 @@ class AutomationRunner:
     def _safe_case_id(case_id: str) -> str:
         return re.sub(r"[^A-Za-z0-9._-]+", "_", case_id)
 
+    @staticmethod
+    def _derive_failure_reason(case_result: dict[str, Any], run_info: dict[str, Any]) -> str:
+        if case_result.get("success"):
+            return ""
+        if case_result.get("failure_reason"):
+            return str(case_result.get("failure_reason"))
+        if case_result.get("error"):
+            return str(case_result.get("error"))
+        if run_info.get("timed_out"):
+            return "Timed out while waiting for Autodesk CFD script execution."
+        stderr = (run_info.get("stderr") or "").strip()
+        if stderr:
+            return stderr.splitlines()[-1][:500]
+        returncode = run_info.get("returncode")
+        if returncode not in (None, 0):
+            return f"Autodesk CFD script exited with return code {returncode}."
+        log_text = run_info.get("log_text", "") or ""
+        if "ERROR in Python script" in log_text:
+            lines = [line.strip() for line in log_text.splitlines() if line.strip()]
+            if lines:
+                return lines[-1][:500]
+        return "Case failed for an unspecified reason."
+
     def _emit(self, progress: ProgressFn | None, **event: Any) -> None:
         if progress:
             progress(event)
+
+    def discover_studies(self, *, max_results: int = 200, max_depth: int = 5) -> list[dict[str, Any]]:
+        cfg = self.get_config()
+        configured_study = str(cfg.get("study", {}).get("template_model", "")).strip()
+
+        roots: list[Path] = []
+        if configured_study:
+            candidate = Path(configured_study)
+            if candidate.exists():
+                roots.append(candidate.parent if candidate.is_file() else candidate)
+
+        home = Path.home()
+        roots.extend(
+            [
+                home / "Downloads",
+                home / "Documents",
+                home / "Desktop",
+                self.project_root,
+            ]
+        )
+
+        seen_roots: list[Path] = []
+        dedup = set()
+        for root in roots:
+            try:
+                resolved = root.resolve()
+            except Exception:
+                continue
+            key = str(resolved).lower()
+            if key in dedup or not resolved.exists():
+                continue
+            dedup.add(key)
+            seen_roots.append(resolved)
+
+        found: list[dict[str, Any]] = []
+        seen_files: set[str] = set()
+
+        for root in seen_roots:
+            if len(found) >= max_results:
+                break
+            for walk_root, _, files in os.walk(root):
+                rel_parts = Path(walk_root).relative_to(root).parts
+                if len(rel_parts) > max_depth:
+                    continue
+                for file_name in files:
+                    if not file_name.lower().endswith(".cfdst"):
+                        continue
+                    full_path = Path(walk_root) / file_name
+                    key = str(full_path).lower()
+                    if key in seen_files:
+                        continue
+                    seen_files.add(key)
+                    try:
+                        stat = full_path.stat()
+                        size = int(stat.st_size)
+                        modified = int(stat.st_mtime)
+                    except OSError:
+                        size = 0
+                        modified = 0
+                    found.append(
+                        {
+                            "path": str(full_path),
+                            "size_bytes": size,
+                            "modified_epoch": modified,
+                        }
+                    )
+                    if len(found) >= max_results:
+                        break
+                if len(found) >= max_results:
+                    break
+
+        found.sort(key=lambda item: item.get("modified_epoch", 0), reverse=True)
+        return found
 
     def _select_cases(
         self,
@@ -149,6 +251,15 @@ class AutomationRunner:
         cfd_exe = cfg.get("automation", {}).get("cfd_executable")
         if not cfd_exe:
             raise ValueError("No Autodesk CFD executable configured.")
+        study_path = str(cfg.get("study", {}).get("template_model", "")).strip()
+        if not study_path:
+            raise ValueError("No study.template_model configured.")
+        study_file = Path(study_path)
+        if study_file.suffix.lower() != ".cfdst":
+            raise ValueError(f"study.template_model must be a .cfdst file: {study_path}")
+        if not study_file.exists():
+            raise ValueError(f"Configured study file does not exist: {study_path}")
+        solve_enabled = bool(cfg.get("solve", {}).get("enabled", False))
 
         timeout_seconds = int((cfg.get("automation", {}).get("timeout_minutes", 120) or 120) * 60)
         max_retries = int(cfg.get("automation", {}).get("max_retries", 1) or 1)
@@ -166,6 +277,8 @@ class AutomationRunner:
             mode=mode,
             total_cases=len(cases),
             selected_cases=len(selected_cases),
+            solve_enabled=solve_enabled,
+            study_path=str(cfg.get("study", {}).get("template_model", "")),
         )
 
         new_results: dict[str, dict[str, Any]] = {}
@@ -223,6 +336,7 @@ class AutomationRunner:
                     "log_path": run_info.get("log_path", ""),
                 }
                 case_result["payload_path"] = str(payload_path)
+                case_result["failure_reason"] = self._derive_failure_reason(case_result, run_info)
                 write_json(case_result_path, case_result)
 
                 if run_info.get("log_text"):
@@ -245,7 +359,7 @@ class AutomationRunner:
                     case_id=case_id,
                     attempt=attempt,
                     max_attempts=max_retries + 1,
-                    reason=(case_result.get("error") or "case failed"),
+                    reason=(case_result.get("failure_reason") or "case failed"),
                 )
 
             if not last_result:
@@ -266,7 +380,7 @@ class AutomationRunner:
                 if last_result.get("payload_path")
                 else "",
                 "metrics": last_result.get("metrics", {}),
-                "error": last_result.get("error", ""),
+                "error": last_result.get("failure_reason", last_result.get("error", "")),
             }
 
         # Rehydrate unchanged cases from prior state so report still contains all cases.

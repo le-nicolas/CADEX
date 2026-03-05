@@ -90,6 +90,7 @@ body {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  align-items: center;
 }
 
 .pill {
@@ -114,11 +115,67 @@ body {
   background: #f1f5f9;
 }
 
+#apiKeyInput {
+  border: 1px solid #94a3b8;
+  border-radius: 10px;
+  padding: 6px 9px;
+  min-width: 180px;
+  background: #ffffff;
+}
+
 .actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   margin: 14px 0;
+}
+
+.helper {
+  margin: 0 0 10px 0;
+  color: var(--ink-soft);
+  font-size: 0.92rem;
+}
+
+.study-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+  margin-bottom: 8px;
+}
+
+.study-row input,
+.study-row select {
+  flex: 1;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 8px;
+  background: #f8fafc;
+  color: var(--ink);
+}
+
+.study-row select {
+  min-height: 130px;
+  font-family: Consolas, "Cascadia Mono", monospace;
+  font-size: 12px;
+}
+
+.banner {
+  border: 1px solid #f59e0b;
+  background: #fff7ed;
+  color: #7c2d12;
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+
+.banner.neutral {
+  border-color: #334155;
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.hidden {
+  display: none;
 }
 
 button {
@@ -248,11 +305,28 @@ th {
   background: #fff;
 }
 
+#failureWrap {
+  margin-top: 12px;
+}
+
+.failure-item {
+  border: 1px solid #fca5a5;
+  background: #fef2f2;
+  color: #7f1d1d;
+  border-radius: 8px;
+  padding: 8px;
+  margin-bottom: 8px;
+  font-size: 0.9rem;
+}
+
 @media (max-width: 1024px) {
   .grid {
     grid-template-columns: 1fr;
   }
   textarea {
     min-height: 240px;
+  }
+  .study-row {
+    flex-direction: column;
   }
 }

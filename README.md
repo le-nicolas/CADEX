@@ -19,10 +19,6 @@ This project is a local web app and automation framework for Autodesk CFD that p
   - markdown/html report
 - Pass/fail criteria and weighted ranking.
 
-The default config is pre-wired to your test study:
-
-`C:/Users/User/Downloads/Kani yawa/Kani yawa.cfdst`
-
 ## Project Structure
 
 - `app.py`: Flask server + API + background run manager.
@@ -57,6 +53,19 @@ Open:
 
 `http://127.0.0.1:5055`
 
+## First-Time Setup: Study Path
+
+No user-specific study path is hardcoded now.
+
+Set your `.cfdst` path in either way:
+
+1. Web console:
+   - Use **Discover Studies** and select one.
+   - Or type path manually in **Study Path**.
+   - Click **Apply Path To Config** then **Save Config**.
+2. Manual edit:
+   - Update `study.template_model` in `config/study_config.yaml`.
+
 ## Web API Summary
 
 - `GET /api/config`: load config.
@@ -67,23 +76,56 @@ Open:
 - `POST /api/run`: start run (`mode`: `all|failed|changed`).
 - `GET /api/status`: live status/logs.
 - `GET /api/latest-run`: latest run summary.
+- `GET /api/studies`: discover `.cfdst` files on this machine.
 - `GET /runtime/<path>`: serve generated output files.
 
 ## Notes
 
 - `runtime/` is ignored in git and contains all generated artifacts.
 - By default `solve.enabled` is `false` so runs use existing results for fast testing.
+- The web console shows a prominent warning banner whenever `solve.enabled` is `false`.
 - To force actual solves, set:
   - `solve.enabled: true`
   - optional `force_solve=true` in specific case rows.
 
+## Failure Semantics and Retry Behavior
+
+A case is marked `failed` when any of these occurs:
+
+- CFD script process timeout.
+- CFD script process non-zero exit.
+- Python exception inside `scripts/cfd_case_runner.py`.
+- No usable results/summary available for post-processing.
+
+Failure reason is stored in `failure_reason` and shown in:
+
+- Dashboard results table.
+- Dashboard "Failure Reasons" section.
+- Case result JSON in `runtime/runs/<run_id>/cases/<case_id>/attempt_<n>/case_result.json`.
+
+Retries are controlled by `automation.max_retries` in config.
+
+## API Security (Local Tool)
+
+By default there is no API auth, suitable for single-user localhost usage.
+
+Optional protection:
+
+1. Set environment variable:
+   - `CFD_AUTOMATION_API_KEY=your-secret`
+2. Restart server.
+3. Use the top-right API key field in the web console (sent as `X-API-Key`).
+
+When enabled, mutating endpoints (`POST /api/config`, `POST /api/cases`, `POST /api/introspect`, `POST /api/run`) require the key.
+
 ## Example Workflow
 
 1. Open the web console.
-2. Click `Introspect Study` to inspect available BCs/properties.
-3. Adjust `parameter_mappings`, metrics, criteria, and ranking in Config.
-4. Edit `cases.csv`.
-5. Run `Run All`.
-6. Review outputs from `Latest Run Outputs` (CSV/charts/report/screenshots).
+2. Set study path and save config.
+3. Click `Introspect Study` to inspect available BCs/properties.
+4. Adjust `parameter_mappings`, metrics, criteria, and ranking in Config.
+5. Edit `cases.csv`.
+6. Run `Run All`.
+7. Review outputs from `Latest Run Outputs` (CSV/charts/report/screenshots).
 
 
