@@ -1,6 +1,21 @@
-# Autodesk CFD Automation Web Console
+# CFD Automated Design EXploration
 
-This project is a local web app and automation framework for Autodesk CFD that provides:
+CADEX is an open-source, locally-run design exploration platform for Autodesk CFD. It replaces manual parametric workflows with a closed-loop AI-assisted engine — from natural language case generation to Bayesian optimization — while keeping engineers in control of geometry and physics judgment. 
+
+## What It Does
+CADEX takes a CFD study and systematically explores its design space without requiring manual intervention between runs. Engineers define a goal — minimize temperature, maximize flow uniformity, minimize pressure drop — and CADEX proposes cases, runs them, reads the results, and proposes smarter cases automatically until it converges on an optimal design.
+
+## How It Works
+The engine has four layers working together:
+Language — describe your study in plain English. CADEX generates the case matrix automatically via a local Ollama model or Groq cloud API.
+Intelligence — before any solve runs, CADEX evaluates mesh quality and fails fast on bad geometry rather than wasting hours on a doomed simulation.
+Optimization — a Bayesian optimizer proposes each new batch of cases based on what previous results revealed, focusing compute where it matters most.
+Explanation — an LLM layer wraps the optimizer, translating mathematical convergence into plain engineering reasoning at every step.
+
+## Why It Exists
+Commercial tools like Ansys OptiSLang and SimScale charge enterprise prices for closed-loop design exploration. CADEX brings the same capability to any engineer with a Windows machine, Autodesk CFD, and an internet connection — for free.
+
+| Built for Autodesk CFD 2026. Runs locally. No cloud required.
 
 - Config-driven case execution from CSV.
 - Direct CFD scripting execution via `CFD.exe -script`.
