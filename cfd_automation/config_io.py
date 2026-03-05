@@ -63,6 +63,15 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "refine_inflation_delta": 1,
         },
     },
+    "design_loop": {
+        "batch_size_default": 8,
+        "max_batches_default": 4,
+        "random_seed": 42,
+        "penalty_missing_objective": 1000000000.0,
+        "penalty_constraint": 1000000.0,
+        "restore_cases_csv_after_run": True,
+        "use_llm_explanations": True,
+    },
     "solve": {
         "enabled": False,
         "skip_if_results_exist": True,

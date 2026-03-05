@@ -237,7 +237,8 @@ textarea {
 #logs,
 #introspection,
 #llmResult,
-#meshResult {
+#meshResult,
+#loopStatus {
   min-height: 300px;
   max-height: 420px;
   overflow: auto;
@@ -256,7 +257,8 @@ textarea {
 }
 
 #llmResult,
-#meshResult {
+#meshResult,
+#loopStatus {
   min-height: 120px;
   max-height: 260px;
 }

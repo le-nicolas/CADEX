@@ -8,6 +8,7 @@ This project is a local web app and automation framework for Autodesk CFD that p
 - Natural language to `cases.csv` generation (Ollama or Groq provider).
 - LLM mesh intelligence (`mesh.default_params` + quality gate suggestions).
 - Pre-solve mesh quality gating (skewness, aspect ratio, orthogonality, element count sanity).
+- Generative Design Loop (closed-loop Bayesian optimization + optional LLM reasoning).
 - Automatic retries on failed cases.
 - Live log streaming into dashboard during active case execution.
 - Run modes:
@@ -80,6 +81,10 @@ Set your `.cfdst` path in either way:
 - `POST /api/llm/generate-cases`: generate case matrix from natural language (`apply=true` to persist).
 - `POST /api/llm/suggest-mesh`: suggest mesh defaults + mesh gate thresholds (`apply=true` to persist).
 - `POST /api/run`: start run (`mode`: `all|failed|changed`).
+- `POST /api/design-loop/start`: start closed-loop optimization batches.
+- `POST /api/design-loop/stop`: request graceful stop.
+- `GET /api/design-loop/status`: live loop state/logs.
+- `GET /api/design-loop/latest`: latest completed loop summary.
 - `GET /api/status`: live status/logs.
 - `GET /api/latest-run`: latest run summary.
 - `GET /api/studies`: discover `.cfdst` files on this machine.
@@ -138,6 +143,46 @@ Retries are now failure-mode aware:
 - `mesh_failure` or `solver_divergence`: retry with mesh adjustment (`coarsen`/`refine` strategy from `mesh.retry`).
 - `script_failure`: retry as-is (same mesh settings).
 - Other failures: retry with standard behavior.
+
+## Generative Design Loop (Closed Loop)
+
+This is the automated loop:
+
+1. Propose next `cases.csv` batch from Bayesian optimizer.
+2. Run existing CFD automation engine unchanged.
+3. Read metrics/results and score objective + constraints.
+4. Feed scores back to optimizer and generate next batch.
+5. Repeat until `max_batches` or stop requested.
+
+### Payload Example
+
+`POST /api/design-loop/start`
+
+```json
+{
+  "objective_alias": "temp_max_c",
+  "objective_goal": "min",
+  "search_space": [
+    {"name": "fin_height_mm", "type": "real", "min": 5, "max": 20},
+    {"name": "fin_spacing_mm", "type": "real", "min": 2, "max": 10},
+    {"name": "flow_rate_lpm", "type": "real", "min": 1, "max": 5}
+  ],
+  "constraints": [
+    {"alias": "pressure_drop_pa", "operator": "<=", "threshold": 50}
+  ],
+  "batch_size": 10,
+  "max_batches": 5,
+  "fixed_values": {"ambient_temp_c": 25},
+  "use_llm_explanations": true
+}
+```
+
+### Notes
+
+- The optimizer uses `scikit-optimize` (GP/EI) when available.
+- If unavailable, it falls back to random sampling (functional but less sample-efficient).
+- Loop artifacts are saved in `runtime/design_loops/<loop_id>/`.
+- Loop can be started/stopped from the web dashboard section **Generative Design Loop**.
 
 ## LLM Case Builder
 
@@ -228,7 +273,7 @@ Optional protection:
 2. Restart server.
 3. Use the top-right API key field in the web console (sent as `X-API-Key`).
 
-When enabled, mutating endpoints (`POST /api/config`, `POST /api/cases`, `POST /api/introspect`, `POST /api/run`, `POST /api/llm/generate-cases`, `POST /api/llm/suggest-mesh`) require the key.
+When enabled, mutating endpoints (`POST /api/config`, `POST /api/cases`, `POST /api/introspect`, `POST /api/run`, `POST /api/llm/generate-cases`, `POST /api/llm/suggest-mesh`, `POST /api/design-loop/start`, `POST /api/design-loop/stop`) require the key.
 
 ## Example Workflow
 

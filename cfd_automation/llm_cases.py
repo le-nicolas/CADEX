@@ -632,3 +632,113 @@ class LLMMeshAdvisor:
             "notes": normalized["notes"],
             "raw_content": content,
         }
+
+
+class LLMOptimizerNarrator:
+    def __init__(self, llm_config: dict[str, Any], transport: TransportFn | None = None):
+        self._cfg = llm_config or {}
+        self._transport = transport or _post_json
+
+    def _run_ollama(self, *, messages: list[dict[str, str]], temperature: float) -> tuple[str, str]:
+        ollama_cfg = self._cfg.get("ollama", {}) if isinstance(self._cfg, dict) else {}
+        base_url = str(ollama_cfg.get("base_url", "http://127.0.0.1:11434")).rstrip("/")
+        model = str(ollama_cfg.get("model", "llama3.2:3b")).strip()
+        timeout = int(ollama_cfg.get("timeout_seconds", 120) or 120)
+        if not model:
+            raise ValueError("llm.ollama.model is empty.")
+        payload = {
+            "model": model,
+            "messages": messages,
+            "stream": False,
+            "options": {"temperature": float(temperature)},
+        }
+        response = self._transport(f"{base_url}/api/chat", {}, payload, timeout)
+        content = _extract_content_from_ollama(response)
+        return model, content
+
+    def _run_groq(self, *, messages: list[dict[str, str]], temperature: float) -> tuple[str, str]:
+        groq_cfg = self._cfg.get("groq", {}) if isinstance(self._cfg, dict) else {}
+        base_url = str(groq_cfg.get("base_url", "https://api.groq.com/openai/v1")).rstrip("/")
+        model = str(groq_cfg.get("model", "llama-3.1-8b-instant")).strip()
+        timeout = int(groq_cfg.get("timeout_seconds", 60) or 60)
+        api_key_env = str(groq_cfg.get("api_key_env", "GROQ_API_KEY")).strip() or "GROQ_API_KEY"
+        api_key = os.environ.get(api_key_env, "").strip()
+        if not api_key:
+            raise ValueError(f"Groq API key missing. Set environment variable: {api_key_env}")
+        if not model:
+            raise ValueError("llm.groq.model is empty.")
+        payload = {
+            "model": model,
+            "messages": messages,
+            "temperature": float(temperature),
+        }
+        headers = {"Authorization": f"Bearer {api_key}"}
+        response = self._transport(f"{base_url}/chat/completions", headers, payload, timeout)
+        content = _extract_content_from_groq(response)
+        return model, content
+
+    @staticmethod
+    def _build_messages(
+        *,
+        objective_alias: str,
+        objective_goal: str,
+        constraints: list[dict[str, Any]],
+        batch_records: list[dict[str, Any]],
+        prior_best: dict[str, Any] | None,
+    ) -> list[dict[str, str]]:
+        system_text = (
+            "You explain Bayesian optimization steps for CFD design studies.\n"
+            "Return only one JSON object in schema: {\"summary\":\"...\"}\n"
+            "Keep summary concise (2-5 sentences), actionable, and physically grounded.\n"
+            "Mention feasibility/constraints and why next exploration region makes sense."
+        )
+        payload = {
+            "objective_alias": objective_alias,
+            "objective_goal": objective_goal,
+            "constraints": constraints,
+            "batch_records": batch_records[:30],
+            "prior_best": prior_best or {},
+        }
+        user_text = f"Context:\n{json.dumps(payload, ensure_ascii=True)}\n\nReturn JSON only."
+        return [
+            {"role": "system", "content": system_text},
+            {"role": "user", "content": user_text},
+        ]
+
+    def narrate_batch(
+        self,
+        *,
+        objective_alias: str,
+        objective_goal: str,
+        constraints: list[dict[str, Any]],
+        batch_records: list[dict[str, Any]],
+        prior_best: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        provider = str(self._cfg.get("provider", "ollama")).strip().lower() or "ollama"
+        temperature = float(self._cfg.get("temperature", 0.1) or 0.1)
+        messages = self._build_messages(
+            objective_alias=objective_alias,
+            objective_goal=objective_goal,
+            constraints=constraints,
+            batch_records=batch_records,
+            prior_best=prior_best,
+        )
+        if provider == "ollama":
+            model, content = self._run_ollama(messages=messages, temperature=temperature)
+        elif provider == "groq":
+            model, content = self._run_groq(messages=messages, temperature=temperature)
+        else:
+            raise ValueError(f"Unsupported llm.provider: {provider}")
+
+        block = _find_first_json_object(content.strip())
+        parsed = json.loads(block)
+        if not isinstance(parsed, dict):
+            raise ValueError("Narrator output root must be JSON object.")
+        summary = str(parsed.get("summary", "")).strip()
+        if not summary:
+            summary = content.strip()[:1000]
+        return {
+            "provider": provider,
+            "model": model,
+            "text": summary,
+        }

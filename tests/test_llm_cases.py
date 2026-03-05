@@ -209,3 +209,30 @@ def test_llm_mesh_endpoint_apply(monkeypatch) -> None:
     assert payload["applied"] is True
     assert saved_cfg["mesh"]["default_params"]["inflation_layers"] == 5
     assert saved_cfg["mesh"]["quality_gate"]["skewness_max"] == 0.92
+
+
+def test_design_loop_start_endpoint_conflict(monkeypatch) -> None:
+    import app as web_app
+
+    monkeypatch.setattr(web_app, "API_KEY", "")
+    monkeypatch.setattr(web_app.run_manager, "get", lambda: {"running": True})
+
+    client = web_app.app.test_client()
+    response = client.post("/api/design-loop/start", json={"objective_alias": "temp_max_c"})
+    payload = response.get_json()
+    assert response.status_code == 409
+    assert payload["ok"] is False
+
+
+def test_design_loop_start_endpoint_success(monkeypatch) -> None:
+    import app as web_app
+
+    monkeypatch.setattr(web_app, "API_KEY", "")
+    monkeypatch.setattr(web_app.run_manager, "get", lambda: {"running": False})
+    monkeypatch.setattr(web_app.design_loop_manager, "start", lambda _payload: (True, "Design loop started."))
+
+    client = web_app.app.test_client()
+    response = client.post("/api/design-loop/start", json={"objective_alias": "temp_max_c"})
+    payload = response.get_json()
+    assert response.status_code == 200
+    assert payload["ok"] is True

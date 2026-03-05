@@ -97,6 +97,35 @@
       <pre id="meshResult"></pre>
     </section>
 
+    <section class="panel">
+      <h2>Generative Design Loop</h2>
+      <p class="helper">
+        Closed-loop optimization: propose batch, run CFD, learn from results, propose next batch automatically.
+      </p>
+      <div class="study-row">
+        <input id="loopObjectiveAlias" type="text" placeholder="Objective metric alias (e.g., temp_max_c)">
+        <select id="loopObjectiveGoal">
+          <option value="min">Goal: Minimize</option>
+          <option value="max">Goal: Maximize</option>
+        </select>
+      </div>
+      <div class="study-row">
+        <input id="loopBatchSize" type="number" min="1" max="200" placeholder="Batch size (e.g., 8)">
+        <input id="loopMaxBatches" type="number" min="1" max="100" placeholder="Max batches (e.g., 4)">
+      </div>
+      <p class="helper">Search Space JSON</p>
+      <textarea id="loopSearchSpace" class="llm-prompt" spellcheck="false" placeholder='[{"name":"fin_height_mm","type":"real","min":5,"max":20},{"name":"fin_spacing_mm","type":"real","min":2,"max":10},{"name":"flow_rate_lpm","type":"real","min":1,"max":5}]'></textarea>
+      <p class="helper">Constraints JSON (optional)</p>
+      <textarea id="loopConstraints" class="llm-prompt" spellcheck="false" placeholder='[{"alias":"pressure_drop_pa","operator":"<=","threshold":50}]'></textarea>
+      <p class="helper">Fixed Values JSON (optional)</p>
+      <textarea id="loopFixedValues" class="llm-prompt" spellcheck="false" placeholder='{"ambient_temp_c":25}'></textarea>
+      <div class="actions">
+        <button id="loopStartBtn" class="accent">Start Design Loop</button>
+        <button id="loopStopBtn">Stop Design Loop</button>
+      </div>
+      <pre id="loopStatus"></pre>
+    </section>
+
     <section class="grid">
       <article class="panel half">
         <h2>Live Status</h2>

@@ -28,6 +28,16 @@ const ui = {
   meshSuggestBtn: document.getElementById("meshSuggestBtn"),
   meshApplyBtn: document.getElementById("meshApplyBtn"),
   meshResult: document.getElementById("meshResult"),
+  loopObjectiveAlias: document.getElementById("loopObjectiveAlias"),
+  loopObjectiveGoal: document.getElementById("loopObjectiveGoal"),
+  loopBatchSize: document.getElementById("loopBatchSize"),
+  loopMaxBatches: document.getElementById("loopMaxBatches"),
+  loopSearchSpace: document.getElementById("loopSearchSpace"),
+  loopConstraints: document.getElementById("loopConstraints"),
+  loopFixedValues: document.getElementById("loopFixedValues"),
+  loopStartBtn: document.getElementById("loopStartBtn"),
+  loopStopBtn: document.getElementById("loopStopBtn"),
+  loopStatus: document.getElementById("loopStatus"),
   studyPathInput: document.getElementById("studyPathInput"),
   discoverStudiesBtn: document.getElementById("discoverStudiesBtn"),
   applyStudyPathBtn: document.getElementById("applyStudyPathBtn"),
@@ -262,6 +272,37 @@ async function loadConfig() {
   ui.configText.value = JSON.stringify(config, null, 2);
   const llmMaxRows = config && config.llm ? config.llm.max_rows : "";
   ui.llmMaxRows.value = llmMaxRows ? String(llmMaxRows) : "";
+
+   if (!ui.loopObjectiveAlias.value) {
+    const ranking = (config && config.ranking) || [];
+    if (ranking.length && ranking[0].alias) {
+      ui.loopObjectiveAlias.value = String(ranking[0].alias);
+      ui.loopObjectiveGoal.value = String(ranking[0].goal || "min").toLowerCase() === "max" ? "max" : "min";
+    }
+  }
+  if (!ui.loopBatchSize.value) {
+    const loopCfg = (config && config.design_loop) || {};
+    if (loopCfg.batch_size_default) ui.loopBatchSize.value = String(loopCfg.batch_size_default);
+    if (loopCfg.max_batches_default) ui.loopMaxBatches.value = String(loopCfg.max_batches_default);
+  }
+  if (!ui.loopSearchSpace.value) {
+    ui.loopSearchSpace.value = JSON.stringify(
+      [
+        { name: "fin_height_mm", type: "real", min: 5, max: 20 },
+        { name: "fin_spacing_mm", type: "real", min: 2, max: 10 },
+        { name: "flow_rate_lpm", type: "real", min: 1, max: 5 },
+      ],
+      null,
+      2
+    );
+  }
+  if (!ui.loopConstraints.value) {
+    const criteria = (config && config.criteria) || [];
+    ui.loopConstraints.value = JSON.stringify(criteria, null, 2);
+  }
+  if (!ui.loopFixedValues.value) {
+    ui.loopFixedValues.value = JSON.stringify({}, null, 2);
+  }
   syncStudyPathInput();
   updateSolveBanner();
 }
@@ -365,6 +406,108 @@ async function suggestMeshWithLlm(apply) {
   flash(`LLM mesh suggestion generated${apply ? " and applied" : ""}.`);
 }
 
+function parseJsonField(text, fieldName, fallback) {
+  const trimmed = (text || "").trim();
+  if (!trimmed) return fallback;
+  try {
+    return JSON.parse(trimmed);
+  } catch (_err) {
+    throw new Error(`${fieldName} is not valid JSON.`);
+  }
+}
+
+function buildDesignLoopPayload() {
+  const objectiveAlias = (ui.loopObjectiveAlias.value || "").trim();
+  if (!objectiveAlias) {
+    throw new Error("Objective alias is required.");
+  }
+  const objectiveGoal = (ui.loopObjectiveGoal.value || "min").trim().toLowerCase() === "max" ? "max" : "min";
+  const batchSizeText = (ui.loopBatchSize.value || "").trim();
+  const maxBatchesText = (ui.loopMaxBatches.value || "").trim();
+  const batchSize = batchSizeText ? Number.parseInt(batchSizeText, 10) : undefined;
+  const maxBatches = maxBatchesText ? Number.parseInt(maxBatchesText, 10) : undefined;
+  if (batchSize !== undefined && (!Number.isFinite(batchSize) || batchSize <= 0)) {
+    throw new Error("Batch size must be a positive integer.");
+  }
+  if (maxBatches !== undefined && (!Number.isFinite(maxBatches) || maxBatches <= 0)) {
+    throw new Error("Max batches must be a positive integer.");
+  }
+
+  const searchSpace = parseJsonField(ui.loopSearchSpace.value, "Search Space", []);
+  const constraints = parseJsonField(ui.loopConstraints.value, "Constraints", []);
+  const fixedValues = parseJsonField(ui.loopFixedValues.value, "Fixed Values", {});
+
+  if (!Array.isArray(searchSpace) || !searchSpace.length) {
+    throw new Error("Search Space must be a non-empty JSON array.");
+  }
+  if (!Array.isArray(constraints)) {
+    throw new Error("Constraints must be a JSON array.");
+  }
+  if (typeof fixedValues !== "object" || Array.isArray(fixedValues) || fixedValues === null) {
+    throw new Error("Fixed Values must be a JSON object.");
+  }
+
+  return {
+    objective_alias: objectiveAlias,
+    objective_goal: objectiveGoal,
+    batch_size: batchSize,
+    max_batches: maxBatches,
+    search_space: searchSpace,
+    constraints,
+    fixed_values: fixedValues,
+  };
+}
+
+function renderDesignLoopStatus(payload) {
+  const lines = [];
+  lines.push(`Running: ${payload.running ? "yes" : "no"}`);
+  lines.push(`Status: ${payload.status || "-"}`);
+  lines.push(`Loop ID: ${payload.loop_id || "-"}`);
+  lines.push(`Batch: ${payload.current_batch || 0} / ${payload.max_batches || 0}`);
+  lines.push(`Completed Batches: ${payload.completed_batches || 0}`);
+  if (payload.last_error) {
+    lines.push(`Last Error: ${payload.last_error}`);
+  }
+
+  const summary = payload.last_summary || {};
+  if (summary.best_case) {
+    lines.push("");
+    lines.push("Best Case:");
+    lines.push(JSON.stringify(summary.best_case, null, 2));
+  }
+
+  const logs = (payload.logs || []).slice(-12);
+  if (logs.length) {
+    lines.push("");
+    lines.push("Recent Logs:");
+    for (const line of logs) lines.push(line);
+  }
+
+  ui.loopStatus.textContent = lines.join("\n");
+}
+
+async function startDesignLoop() {
+  const body = buildDesignLoopPayload();
+  const payload = await callApi("/api/design-loop/start", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  flash(payload.message || "Design loop started.");
+}
+
+async function stopDesignLoop() {
+  const payload = await callApi("/api/design-loop/stop", {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+  flash(payload.message || "Design loop stop requested.");
+}
+
+async function refreshDesignLoopStatus() {
+  const payload = await callApi("/api/design-loop/status");
+  renderDesignLoopStatus(payload);
+}
+
 async function discoverStudies() {
   const payload = await callApi("/api/studies");
   fillStudyCandidates(payload.studies || []);
@@ -401,7 +544,7 @@ async function refreshLatestRun() {
 
 async function boot() {
   try {
-    await Promise.all([loadConfig(), loadCases(), refreshStatus(), refreshLatestRun()]);
+    await Promise.all([loadConfig(), loadCases(), refreshStatus(), refreshLatestRun(), refreshDesignLoopStatus()]);
   } catch (err) {
     flash(`Initial load failed: ${err.message}`);
   }
@@ -539,10 +682,31 @@ ui.meshApplyBtn.addEventListener("click", async () => {
   }
 });
 
+ui.loopStartBtn.addEventListener("click", async () => {
+  try {
+    await startDesignLoop();
+    await refreshDesignLoopStatus();
+  } catch (err) {
+    flash(`Start design loop failed: ${err.message}`);
+    ui.loopStatus.textContent = `Start design loop failed: ${err.message}`;
+  }
+});
+
+ui.loopStopBtn.addEventListener("click", async () => {
+  try {
+    await stopDesignLoop();
+    await refreshDesignLoopStatus();
+  } catch (err) {
+    flash(`Stop design loop failed: ${err.message}`);
+    ui.loopStatus.textContent = `Stop design loop failed: ${err.message}`;
+  }
+});
+
 setInterval(async () => {
   try {
     await refreshStatus();
     await refreshLatestRun();
+    await refreshDesignLoopStatus();
   } catch (err) {
     flash(`Auto-refresh failed: ${err.message}`);
   }

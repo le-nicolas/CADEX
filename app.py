@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
 import os
 from pathlib import Path
 from threading import Lock, Thread
@@ -8,11 +9,17 @@ from typing import Any
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from cfd_automation import AutomationRunner, LLMCaseGenerator, LLMMeshAdvisor
+from cfd_automation import (
+    AutomationRunner,
+    GenerativeDesignLoop,
+    LLMCaseGenerator,
+    LLMMeshAdvisor,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 runner = AutomationRunner(PROJECT_ROOT)
+design_loop_engine = GenerativeDesignLoop(runner)
 API_KEY = os.environ.get("CFD_AUTOMATION_API_KEY", "").strip()
 
 app = Flask(
@@ -244,6 +251,162 @@ class RunManager:
 run_manager = RunManager()
 
 
+class DesignLoopManager:
+    def __init__(self) -> None:
+        self._lock = Lock()
+        self._state: dict[str, Any] = {
+            "running": False,
+            "status": "idle",
+            "loop_id": "",
+            "started_at": "",
+            "finished_at": "",
+            "current_batch": 0,
+            "max_batches": 0,
+            "completed_batches": 0,
+            "logs": [],
+            "last_error": "",
+            "last_summary": {},
+            "stop_requested": False,
+        }
+
+    def _append_log(self, line: str) -> None:
+        logs = self._state.setdefault("logs", [])
+        logs.append(f"[{utc_now_iso()}] {line}")
+        if len(logs) > 2000:
+            del logs[:-2000]
+
+    def _handle_progress(self, event: dict[str, Any]) -> None:
+        event_type = str(event.get("type", "event"))
+        with self._lock:
+            if event_type == "loop_started":
+                self._state["loop_id"] = event.get("loop_id", "")
+                self._state["status"] = "running"
+                self._state["current_batch"] = 0
+                self._state["completed_batches"] = 0
+                self._state["max_batches"] = int(event.get("max_batches", 0))
+                self._append_log(
+                    "Design loop started. "
+                    f"objective={event.get('objective_alias')} goal={event.get('objective_goal')} "
+                    f"batch_size={event.get('batch_size')} max_batches={self._state['max_batches']}"
+                )
+            elif event_type == "loop_batch_started":
+                batch_index = int(event.get("batch_index", 0))
+                self._state["current_batch"] = batch_index
+                self._append_log(
+                    f"Batch {batch_index} started with {event.get('batch_size', 0)} proposed case(s)."
+                )
+            elif event_type == "loop_batch_finished":
+                batch_index = int(event.get("batch_index", 0))
+                self._state["completed_batches"] = max(self._state["completed_batches"], batch_index)
+                best_case = event.get("best_case", {}) if isinstance(event.get("best_case", {}), dict) else {}
+                narration = event.get("narration", {}) if isinstance(event.get("narration", {}), dict) else {}
+                self._append_log(
+                    f"Batch {batch_index} finished. best_case={best_case.get('case_id', '-')}, "
+                    f"score={best_case.get('score', '-')}, objective={best_case.get('objective_value', '-')}"
+                )
+                if narration.get("text"):
+                    self._append_log(f"LLM insight: {str(narration.get('text'))[:900]}")
+            elif event_type == "loop_run_event":
+                nested = event.get("event", {}) if isinstance(event.get("event", {}), dict) else {}
+                nested_type = str(nested.get("type", ""))
+                if nested_type == "case_failed":
+                    self._append_log(
+                        "Case failed in loop batch "
+                        f"{event.get('batch_index')}: {nested.get('case_id')} "
+                        f"type={nested.get('failure_type', '')} reason={nested.get('reason', '')}"
+                    )
+                elif nested_type == "case_retry":
+                    self._append_log(
+                        "Case retry in loop batch "
+                        f"{event.get('batch_index')}: {nested.get('case_id')} "
+                        f"mode={nested.get('failure_mode', '')} reason={nested.get('reason', '')}"
+                    )
+            elif event_type == "loop_stopped":
+                self._state["status"] = "stopping"
+                self._append_log(f"Stop requested. Halting before batch {event.get('batch_index')}")
+            elif event_type == "loop_finished":
+                summary = event.get("summary", {}) if isinstance(event.get("summary", {}), dict) else {}
+                self._state["last_summary"] = summary
+                self._state["status"] = summary.get("status", "finished")
+                best_case = summary.get("best_case", {}) if isinstance(summary.get("best_case", {}), dict) else {}
+                self._append_log(
+                    f"Design loop finished with status={self._state['status']}. "
+                    f"best_case={best_case.get('case_id', '-')}, score={best_case.get('score', '-')}"
+                )
+            else:
+                self._append_log(str(event))
+
+    def start(self, payload: dict[str, Any]) -> tuple[bool, str]:
+        with self._lock:
+            if self._state.get("running"):
+                return False, "A design loop is already in progress."
+            self._state["running"] = True
+            self._state["status"] = "starting"
+            self._state["started_at"] = utc_now_iso()
+            self._state["finished_at"] = ""
+            self._state["current_batch"] = 0
+            self._state["completed_batches"] = 0
+            self._state["logs"] = []
+            self._state["last_error"] = ""
+            self._state["last_summary"] = {}
+            self._state["stop_requested"] = False
+
+        def worker() -> None:
+            try:
+                summary = design_loop_engine.run(
+                    payload=payload,
+                    progress=self._handle_progress,
+                    should_stop=lambda: bool(self.get().get("stop_requested")),
+                )
+                with self._lock:
+                    self._state["last_summary"] = summary
+                    self._state["status"] = summary.get("status", "finished")
+            except Exception as ex:
+                with self._lock:
+                    self._state["last_error"] = str(ex)
+                    self._state["status"] = "failed"
+                    self._append_log(f"Design loop crashed: {ex}")
+            finally:
+                with self._lock:
+                    self._state["running"] = False
+                    self._state["finished_at"] = utc_now_iso()
+
+        Thread(target=worker, daemon=True).start()
+        return True, "Design loop started."
+
+    def stop(self) -> tuple[bool, str]:
+        with self._lock:
+            if not self._state.get("running"):
+                return False, "No design loop is currently running."
+            self._state["stop_requested"] = True
+            self._state["status"] = "stopping"
+            self._append_log("Stop requested by user.")
+        return True, "Stop request accepted."
+
+    def get(self) -> dict[str, Any]:
+        with self._lock:
+            return dict(self._state)
+
+    def latest(self) -> dict[str, Any]:
+        with self._lock:
+            if self._state.get("last_summary"):
+                return dict(self._state.get("last_summary", {}))
+
+        loops_root = runner.runtime_dir / "design_loops"
+        if not loops_root.exists():
+            return {}
+        summaries = sorted(loops_root.glob("*/loop_summary.json"), reverse=True)
+        for summary_path in summaries:
+            try:
+                return json.loads(summary_path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+        return {}
+
+
+design_loop_manager = DesignLoopManager()
+
+
 @app.route("/")
 def index():
     return send_from_directory(app.static_folder, "index.html")
@@ -427,6 +590,8 @@ def api_run():
     auth = require_api_key()
     if auth:
         return auth
+    if design_loop_manager.get().get("running"):
+        return jsonify({"ok": False, "message": "Design loop is running. Stop it before manual run."}), 409
     payload = request.get_json(force=True, silent=True) or {}
     mode = str(payload.get("mode", "all")).lower()
     started, message = run_manager.start(mode)
@@ -438,6 +603,44 @@ def api_status():
     state = run_manager.get()
     state["auth_required"] = bool(API_KEY)
     return jsonify(state)
+
+
+@app.post("/api/design-loop/start")
+def api_design_loop_start():
+    auth = require_api_key()
+    if auth:
+        return auth
+    if run_manager.get().get("running"):
+        return jsonify({"ok": False, "message": "A manual run is in progress. Wait until it finishes."}), 409
+
+    payload = request.get_json(force=True, silent=True) or {}
+    if not isinstance(payload, dict):
+        return jsonify({"ok": False, "error": "Request body must be a JSON object."}), 400
+    started, message = design_loop_manager.start(payload)
+    status_code = 200 if started else 409
+    return jsonify({"ok": started, "message": message}), status_code
+
+
+@app.post("/api/design-loop/stop")
+def api_design_loop_stop():
+    auth = require_api_key()
+    if auth:
+        return auth
+    ok, message = design_loop_manager.stop()
+    status_code = 200 if ok else 409
+    return jsonify({"ok": ok, "message": message}), status_code
+
+
+@app.get("/api/design-loop/status")
+def api_design_loop_status():
+    state = design_loop_manager.get()
+    state["auth_required"] = bool(API_KEY)
+    return jsonify(state)
+
+
+@app.get("/api/design-loop/latest")
+def api_design_loop_latest():
+    return jsonify(design_loop_manager.latest())
 
 
 @app.get("/api/latest-run")
