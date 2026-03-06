@@ -15,6 +15,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "template_model": "",
         "design_name": "",
         "scenario_name": "",
+        "fluid_preset": "",
     },
     "automation": {
         "cfd_executable": "C:/Program Files/Autodesk/CFD 2026/CFD.exe",
@@ -165,6 +166,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "units": "W/m3",
         },
     ],
+    "fluid_presets": {},
 }
 
 
@@ -260,9 +262,12 @@ def cases_to_csv(rows: list[dict[str, Any]]) -> str:
 
 
 def case_fingerprint(case: dict[str, Any], config: dict[str, Any]) -> str:
+    study_cfg = config.get("study", {}) if isinstance(config.get("study", {}), dict) else {}
     relevant = {
         "case": case,
         "parameter_mappings": config.get("parameter_mappings", []),
+        "fluid_presets": config.get("fluid_presets", {}),
+        "study_fluid_preset": study_cfg.get("fluid_preset", ""),
         "solve": config.get("solve", {}),
         "mesh": config.get("mesh", {}),
         "metrics": config.get("metrics", []),

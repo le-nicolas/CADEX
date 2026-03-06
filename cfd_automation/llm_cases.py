@@ -107,6 +107,24 @@ def _to_int_or_none(value: Any) -> int | None:
         return None
 
 
+def _mapping_source_column(mapping: dict[str, Any]) -> str:
+    if not isinstance(mapping, dict):
+        return ""
+    return str(mapping.get("source_column", mapping.get("param", ""))).strip()
+
+
+def _mapping_match(mapping: dict[str, Any]) -> dict[str, Any]:
+    match = mapping.get("match", {})
+    if not isinstance(match, dict):
+        match = {}
+    else:
+        match = dict(match)
+    target_name = str(mapping.get("target_name", "")).strip()
+    if target_name and not str(match.get("name", "")).strip():
+        match["name"] = target_name
+    return match
+
+
 def _normalize_rows(
     rows: Any,
     *,
@@ -218,7 +236,7 @@ class LLMCaseGenerator:
         for mapping in config.get("parameter_mappings", []):
             if not isinstance(mapping, dict):
                 continue
-            name = str(mapping.get("source_column", "")).strip()
+            name = _mapping_source_column(mapping)
             if name and name not in columns:
                 columns.append(name)
 
@@ -244,11 +262,13 @@ class LLMCaseGenerator:
         for item in config.get("parameter_mappings", []):
             if not isinstance(item, dict):
                 continue
+            match = _mapping_match(item)
             mapping_hints.append(
                 {
-                    "source_column": item.get("source_column", ""),
+                    "source_column": _mapping_source_column(item),
                     "target_type": item.get("target_type", ""),
-                    "match_type": (item.get("match") or {}).get("type", ""),
+                    "target_name": match.get("name", ""),
+                    "match_type": match.get("type", ""),
                     "property": item.get("property", ""),
                     "units": item.get("units", ""),
                 }
@@ -428,11 +448,13 @@ class LLMMeshAdvisor:
         for mapping in config.get("parameter_mappings", []):
             if not isinstance(mapping, dict):
                 continue
+            match = _mapping_match(mapping)
             mapping_hints.append(
                 {
-                    "source_column": mapping.get("source_column", ""),
+                    "source_column": _mapping_source_column(mapping),
                     "target_type": mapping.get("target_type", ""),
-                    "match_type": (mapping.get("match") or {}).get("type", ""),
+                    "target_name": match.get("name", ""),
+                    "match_type": match.get("type", ""),
                     "units": mapping.get("units", ""),
                 }
             )
@@ -445,6 +467,7 @@ class LLMMeshAdvisor:
                 "scenario_name": study_cfg.get("scenario_name", ""),
                 "physics_type": study_cfg.get("physics_type", ""),
                 "fluid": study_cfg.get("fluid", ""),
+                "fluid_preset": study_cfg.get("fluid_preset", ""),
                 "geometry_characteristic_length_m": study_cfg.get("geometry_characteristic_length_m", ""),
             },
             "parameter_mappings": mapping_hints,

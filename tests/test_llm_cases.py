@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from cfd_automation.llm_cases import LLMCaseGenerator, LLMMeshAdvisor
@@ -49,6 +50,52 @@ def test_llm_generator_normalizes_rows_and_case_ids() -> None:
     assert result["rows"][1]["case_id"] == "CASE_001_2"
     assert "inlet_velocity_ms" in result["csv"]
     assert "turbulence_model" in result["csv"]
+
+
+def test_llm_generator_supports_param_mapping_alias() -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_transport(
+        _url: str,
+        _headers: dict[str, str],
+        payload: dict[str, Any],
+        _timeout: int,
+    ) -> dict[str, Any]:
+        captured["payload"] = payload
+        return {"message": {"content": '{"rows":[{"fluid_viscosity":0.001}],"notes":"ok"}'}}
+
+    cfg = {
+        "provider": "ollama",
+        "ollama": {
+            "base_url": "http://127.0.0.1:11434",
+            "model": "unit-test-model",
+            "timeout_seconds": 5,
+        },
+    }
+    run_cfg = {
+        "parameter_mappings": [
+            {
+                "param": "fluid_viscosity",
+                "target_type": "material",
+                "target_name": "air",
+                "property": "dynamic_viscosity",
+                "units": "Pa.s",
+            }
+        ]
+    }
+    generator = LLMCaseGenerator(cfg, transport=fake_transport)
+    result = generator.generate(
+        prompt="set viscosity sweep",
+        config=run_cfg,
+        existing_rows=[],
+    )
+
+    messages = captured.get("payload", {}).get("messages", [])
+    serialized_messages = json.dumps(messages)
+    assert "fluid_viscosity" in serialized_messages
+    assert "target_name" in serialized_messages
+    assert "air" in serialized_messages
+    assert "fluid_viscosity" in result["csv"]
 
 
 def test_llm_generate_endpoint_apply(monkeypatch) -> None:

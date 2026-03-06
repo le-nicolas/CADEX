@@ -115,7 +115,7 @@ json{
     {"name": "flow_rate_lpm",  "type": "real", "min": 1, "max": 5}
   ],
   "constraints": [
-    {"alias": "pressure_drop_pa", "operator": "<=", "threshold": 50}
+    {"alias": "pressure_max_dyne_cm2", "operator": "<=", "threshold": 1500}
   ],
   "batch_size": 10,
   "max_batches": 5,
@@ -372,6 +372,56 @@ Example prompt:
 `test inlet velocities from 1 to 5 m/s in 1 m/s steps with two turbulence models k-epsilon and k-omega while keeping ambient_temp_c at 25`
 
 Important: turbulence-model sweeps only change simulation inputs when you have matching `parameter_mappings` configured for the relevant CFD property. Otherwise, generated turbulence columns are not applied during solve.
+
+### Parameter Mapping Shortcuts
+
+`scripts/cfd_case_runner.py` now accepts mapping shorthand keys in addition to the original schema:
+
+- `param` as alias for `source_column`
+- `target_name` as alias for `match.name`
+
+Example:
+
+```yaml
+parameter_mappings:
+  - param: wall_heat_flux_w_m2
+    target_type: boundary_condition
+    target_name: heated_wall
+    property: heat_flux
+    units: W/m2
+
+  - param: fluid_viscosity
+    target_type: material
+    target_name: air
+    property: dynamic_viscosity
+    units: Pa.s
+```
+
+### Fluid Preset Switcher
+
+You can set `fluid_preset` per case row (or as `study.fluid_preset` default in config):
+
+```yaml
+fluid_preset: water # supported built-ins: air | water | oil
+```
+
+Built-in presets apply common fluid properties (`density`, `dynamic_viscosity`, `specific_heat`, `thermal_conductivity`) to matching fluid materials before regular parameter mappings run.
+
+Optional custom presets can be defined in config:
+
+```yaml
+fluid_presets:
+  water:
+    match:
+      type: fluid
+    properties:
+      density:
+        value: 997
+        units: kg/m^3
+      dynamic_viscosity:
+        value: 0.00089
+        units: Pa.s
+```
 
 ### Provider Configuration
 

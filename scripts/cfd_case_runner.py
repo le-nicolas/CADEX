@@ -11,6 +11,44 @@ import CFD.Results as R
 import CFD.Setup as S
 
 
+BUILTIN_FLUID_PRESETS = {
+    "air": {
+        "match": {"type": "fluid"},
+        "properties": {
+            "density": {"value": 1.225, "units": "kg/m^3"},
+            "dynamic_viscosity": {"value": 1.81e-5, "units": "Pa.s"},
+            "specific_heat": {"value": 1006.0, "units": "J/kg-K"},
+            "thermal_conductivity": {"value": 0.0242, "units": "W/m-K"},
+        },
+    },
+    "water": {
+        "match": {"type": "fluid"},
+        "properties": {
+            "density": {"value": 997.0, "units": "kg/m^3"},
+            "dynamic_viscosity": {"value": 8.9e-4, "units": "Pa.s"},
+            "specific_heat": {"value": 4182.0, "units": "J/kg-K"},
+            "thermal_conductivity": {"value": 0.6, "units": "W/m-K"},
+        },
+    },
+    "oil": {
+        "match": {"type": "fluid"},
+        "properties": {
+            "density": {"value": 870.0, "units": "kg/m^3"},
+            "dynamic_viscosity": {"value": 0.065, "units": "Pa.s"},
+            "specific_heat": {"value": 2000.0, "units": "J/kg-K"},
+            "thermal_conductivity": {"value": 0.145, "units": "W/m-K"},
+        },
+    },
+}
+
+FLUID_PROPERTY_ALIASES = {
+    "density": ["massDensity", "fluidDensity", "rho"],
+    "dynamic_viscosity": ["dynamicViscosity", "viscosity", "mu"],
+    "specific_heat": ["specificHeat", "cp", "specificHeatCapacity"],
+    "thermal_conductivity": ["thermalConductivity", "conductivity", "k"],
+}
+
+
 def parse_scalar(value):
     if value is None:
         return None
@@ -196,15 +234,15 @@ def find_targets(scenario, target_type, match):
     target_type = str(target_type or "scenario").strip().lower()
     if target_type == "scenario":
         return [scenario]
-    if target_type == "boundary_condition":
+    if target_type in {"boundary_condition", "boundary_conditions", "boundary", "bc"}:
         bcs = S.BCList()
         scenario.bcs(bcs)
         return [bc for bc in bcs if bc_matches(bc, match)]
-    if target_type == "material":
+    if target_type in {"material", "materials"}:
         mats = S.MaterialList()
         scenario.materials(mats)
         return [mat for mat in mats if material_matches(mat, match)]
-    if target_type == "part":
+    if target_type in {"part", "parts"}:
         parts = S.PartList()
         scenario.parts(parts)
         return [part for part in parts if part_matches(part, match)]
@@ -244,8 +282,205 @@ def set_object_property(target, property_name, raw_value, units=None):
     raise RuntimeError("Target object does not support property updates.")
 
 
+def _normalize_mapping(mapping):
+    if not isinstance(mapping, dict):
+        return {}
+
+    source_column = str(mapping.get("source_column", mapping.get("param", ""))).strip()
+    target_type = str(mapping.get("target_type", "scenario")).strip() or "scenario"
+    property_name = str(mapping.get("property", "value")).strip() or "value"
+    units = mapping.get("units")
+
+    match = mapping.get("match", {})
+    if not isinstance(match, dict):
+        match = {}
+    else:
+        match = dict(match)
+
+    target_name = str(mapping.get("target_name", "")).strip()
+    if target_name and not str(match.get("name", "")).strip():
+        match["name"] = target_name
+
+    target_id = mapping.get("target_id")
+    if target_id not in ("", None) and match.get("id") in ("", None):
+        match["id"] = target_id
+
+    property_aliases = mapping.get("property_aliases", [])
+    if not isinstance(property_aliases, list):
+        property_aliases = []
+
+    return {
+        "source_column": source_column,
+        "target_type": target_type,
+        "property": property_name,
+        "property_aliases": property_aliases,
+        "units": units,
+        "match": match,
+    }
+
+
+def _set_object_property_with_aliases(target, property_names, raw_value, units=None):
+    last_error = None
+    seen = set()
+    for name in property_names:
+        prop_name = str(name).strip()
+        if not prop_name or prop_name in seen:
+            continue
+        seen.add(prop_name)
+        try:
+            set_object_property(target, prop_name, raw_value, units=units)
+            return prop_name
+        except Exception as ex:
+            last_error = ex
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError("No property names were provided.")
+
+
+def _normalize_fluid_preset_properties(raw_properties):
+    normalized = []
+    if isinstance(raw_properties, dict):
+        iterator = raw_properties.items()
+    elif isinstance(raw_properties, list):
+        iterator = []
+        for item in raw_properties:
+            if not isinstance(item, dict):
+                continue
+            iterator.append((item.get("property", ""), item))
+    else:
+        return normalized
+
+    for key, value in iterator:
+        property_name = str(key).strip()
+        if not property_name:
+            continue
+
+        if isinstance(value, dict):
+            raw_value = value.get("value")
+            units = value.get("units")
+            aliases = value.get("aliases", [])
+        else:
+            raw_value = value
+            units = None
+            aliases = []
+
+        if raw_value in ("", None):
+            continue
+        if not isinstance(aliases, list):
+            aliases = []
+
+        normalized.append(
+            {
+                "property": property_name,
+                "value": raw_value,
+                "units": units,
+                "aliases": [str(alias).strip() for alias in aliases if str(alias).strip()],
+            }
+        )
+    return normalized
+
+
+def _resolve_fluid_preset_definition(config, preset_name):
+    config_presets = config.get("fluid_presets", {})
+    if isinstance(config_presets, dict):
+        raw_preset = config_presets.get(preset_name)
+        if raw_preset is not None and isinstance(raw_preset, dict):
+            match = raw_preset.get("match", raw_preset.get("material_match", {}))
+            if not isinstance(match, dict):
+                match = {}
+            properties = _normalize_fluid_preset_properties(raw_preset.get("properties", {}))
+            if properties:
+                if not match:
+                    match = {"type": "fluid"}
+                return {"match": match, "properties": properties}
+
+    built_in = BUILTIN_FLUID_PRESETS.get(preset_name)
+    if not built_in:
+        return None
+    return {
+        "match": dict(built_in.get("match", {"type": "fluid"})),
+        "properties": _normalize_fluid_preset_properties(built_in.get("properties", {})),
+    }
+
+
+def _selected_fluid_preset(case_row, config):
+    case_value = case_row.get("fluid_preset")
+    if case_value in (None, ""):
+        study_cfg = config.get("study", {}) if isinstance(config.get("study", {}), dict) else {}
+        case_value = study_cfg.get("fluid_preset", "")
+    if case_value in (None, ""):
+        case_value = config.get("fluid_preset", "")
+    preset_name = str(case_value).strip().lower()
+    return preset_name
+
+
+def apply_fluid_preset(scenario, case_row, config, messages, warnings):
+    preset_name = _selected_fluid_preset(case_row, config)
+    if not preset_name:
+        return
+
+    preset = _resolve_fluid_preset_definition(config, preset_name)
+    if not preset:
+        warnings.append(
+            "Unknown fluid_preset "
+            f"'{preset_name}'. Supported built-ins: {', '.join(sorted(BUILTIN_FLUID_PRESETS.keys()))}."
+        )
+        return
+
+    match = preset.get("match", {})
+    targets = find_targets(scenario, "material", match)
+    if not targets:
+        warnings.append(
+            f"fluid_preset '{preset_name}' found no matching material targets "
+            f"(match={match})."
+        )
+        return
+
+    property_updates = preset.get("properties", [])
+    if not property_updates:
+        warnings.append(f"fluid_preset '{preset_name}' has no properties to apply.")
+        return
+
+    applied_count = 0
+    for target in targets:
+        for item in property_updates:
+            property_name = str(item.get("property", "")).strip()
+            if not property_name:
+                continue
+            aliases = []
+            aliases.extend(FLUID_PROPERTY_ALIASES.get(property_name, []))
+            aliases.extend(item.get("aliases", []))
+            property_names = [property_name] + aliases
+            try:
+                used_property = _set_object_property_with_aliases(
+                    target,
+                    property_names,
+                    item.get("value"),
+                    units=item.get("units"),
+                )
+                applied_count += 1
+                messages.append(
+                    f"fluid_preset '{preset_name}' applied material property "
+                    f"{used_property}={item.get('value')}."
+                )
+            except Exception as ex:
+                warnings.append(
+                    f"fluid_preset '{preset_name}' failed to set material property "
+                    f"'{property_name}': {ex}"
+                )
+
+    if applied_count:
+        messages.append(
+            f"Applied fluid_preset '{preset_name}' to {len(targets)} material target(s) "
+            f"with {applied_count} property update(s)."
+        )
+
+
 def apply_parameter_mappings(scenario, case_row, mappings, messages, warnings):
-    for mapping in mappings:
+    if not isinstance(mappings, list):
+        return
+    for raw_mapping in mappings:
+        mapping = _normalize_mapping(raw_mapping)
         source_column = mapping.get("source_column")
         if not source_column:
             continue
@@ -256,6 +491,7 @@ def apply_parameter_mappings(scenario, case_row, mappings, messages, warnings):
         target_type = mapping.get("target_type", "scenario")
         match = mapping.get("match", {})
         property_name = mapping.get("property", "value")
+        property_aliases = mapping.get("property_aliases", [])
         units = mapping.get("units")
 
         targets = find_targets(scenario, target_type, match)
@@ -268,7 +504,12 @@ def apply_parameter_mappings(scenario, case_row, mappings, messages, warnings):
 
         for target in targets:
             try:
-                set_object_property(target, property_name, raw_value, units=units)
+                _set_object_property_with_aliases(
+                    target,
+                    [property_name] + list(property_aliases),
+                    raw_value,
+                    units=units,
+                )
             except Exception as ex:
                 warnings.append(
                     f"Failed to set {property_name} for {target_type} "
@@ -724,6 +965,13 @@ def main():
         apply_solver_overrides(
             scenario,
             solve_cfg.get("scenario_overrides", {}),
+            result["messages"],
+            result["warnings"],
+        )
+        apply_fluid_preset(
+            scenario,
+            case,
+            config,
             result["messages"],
             result["warnings"],
         )
