@@ -187,6 +187,7 @@ Script failure → retries as-is
 - LLM mesh intelligence (`mesh.default_params` + quality gate suggestions).
 - Pre-solve mesh quality gating (skewness, aspect ratio, orthogonality, element count sanity).
 - Generative Design Loop (closed-loop Bayesian optimization + optional LLM reasoning).
+- Case-driven physics controls (turbulence/radiation/heat-transfer toggles by CSV).
 - Automatic retries on failed cases.
 - Live log streaming into dashboard during active case execution.
 - Run modes:
@@ -416,6 +417,46 @@ parameter_mappings:
 ```
 
 Add `turbulence_model` in `cases.csv` rows (for example `k-epsilon`, `SST`). The runner resolves via `values` and writes the mapped value into the scenario property before solve.
+
+### Case-Driven Physics Controls
+
+CADEX now supports case-level physics control columns (before `scenario.run()`), so you can compare model combinations within one batch:
+
+```csv
+case_id,inlet_velocity,turbulence_model,heat_transfer,radiation
+case_1,2.0,k-epsilon,true,false
+case_2,2.0,k-epsilon,true,true
+case_3,2.0,SST,false,false
+```
+
+Built-in recognized columns:
+
+- `turbulence_model`
+- `turbulence_enabled`
+- `heat_transfer`
+- `radiation`
+
+These can be extended via `physics_controls.switches` in config. When mixed physics profiles are detected across successful cases, CADEX records a run-level comparability warning in run status/summary and includes `physics_signature` in output CSVs.
+
+Custom physics switch example:
+
+```yaml
+physics_controls:
+  enabled: true
+  use_builtin_switches: true
+  turbulence_model_values:
+    k-epsilon: 0
+    k-omega: 1
+    sst: 2
+    laminar: 3
+  switches:
+    - param: conjugate_heat
+      target_type: scenario_setting
+      property: conjugateHeatTransfer
+      values:
+        true: true
+        false: false
+```
 
 ### Fluid Preset Switcher
 

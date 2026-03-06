@@ -101,6 +101,44 @@ def test_llm_generator_supports_param_mapping_alias() -> None:
     assert "fluid_viscosity" in result["csv"]
 
 
+def test_llm_generator_suggests_builtin_physics_columns() -> None:
+    def fake_transport(
+        _url: str,
+        _headers: dict[str, str],
+        _payload: dict[str, Any],
+        _timeout: int,
+    ) -> dict[str, Any]:
+        return {"message": {"content": '{"rows":[{"inlet_velocity_ms":1.0}],"notes":"ok"}'}}
+
+    cfg = {
+        "provider": "ollama",
+        "ollama": {
+            "base_url": "http://127.0.0.1:11434",
+            "model": "unit-test-model",
+            "timeout_seconds": 5,
+        },
+    }
+    run_cfg = {
+        "parameter_mappings": [],
+        "physics_controls": {
+            "enabled": True,
+            "use_builtin_switches": True,
+            "switches": [],
+        },
+    }
+    generator = LLMCaseGenerator(cfg, transport=fake_transport)
+    result = generator.generate(
+        prompt="single case",
+        config=run_cfg,
+        existing_rows=[],
+    )
+    assert "heat_transfer" in result["csv"]
+    assert "radiation" in result["csv"]
+    assert "turbulence_enabled" in result["csv"]
+    assert "turbulence_model" in result["csv"]
+    assert "fluid_preset" in result["csv"]
+
+
 def test_llm_generate_endpoint_apply(monkeypatch) -> None:
     import app as web_app
 

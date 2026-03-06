@@ -48,3 +48,31 @@ def test_case_fingerprint_changes_when_fluid_preset_definition_changes() -> None
 
     assert case_fingerprint(case, base) != case_fingerprint(case, changed)
 
+
+def test_case_fingerprint_changes_when_physics_controls_change() -> None:
+    case = {"case_id": "CASE_001", "turbulence_model": "k-epsilon"}
+    base = {
+        "parameter_mappings": [],
+        "solve": {},
+        "mesh": {},
+        "metrics": [],
+        "study": {"fluid_preset": ""},
+        "fluid_presets": {},
+        "physics_controls": {
+            "enabled": True,
+            "use_builtin_switches": True,
+            "turbulence_model_values": {"k-epsilon": 0, "k-omega": 1},
+            "switches": [],
+        },
+    }
+    changed = {
+        **base,
+        "physics_controls": {
+            "enabled": True,
+            "use_builtin_switches": True,
+            "turbulence_model_values": {"k-epsilon": 0, "k-omega": 2},
+            "switches": [],
+        },
+    }
+
+    assert case_fingerprint(case, base) != case_fingerprint(case, changed)

@@ -73,6 +73,17 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "restore_cases_csv_after_run": True,
         "use_llm_explanations": True,
     },
+    "physics_controls": {
+        "enabled": True,
+        "use_builtin_switches": True,
+        "turbulence_model_values": {
+            "k-epsilon": 0,
+            "k-omega": 1,
+            "sst": 2,
+            "laminar": 3,
+        },
+        "switches": [],
+    },
     "solve": {
         "enabled": False,
         "skip_if_results_exist": True,
@@ -268,6 +279,7 @@ def case_fingerprint(case: dict[str, Any], config: dict[str, Any]) -> str:
         "parameter_mappings": config.get("parameter_mappings", []),
         "fluid_presets": config.get("fluid_presets", {}),
         "study_fluid_preset": study_cfg.get("fluid_preset", ""),
+        "physics_controls": config.get("physics_controls", {}),
         "solve": config.get("solve", {}),
         "mesh": config.get("mesh", {}),
         "metrics": config.get("metrics", []),

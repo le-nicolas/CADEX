@@ -48,6 +48,26 @@ FLUID_PROPERTY_ALIASES = {
     "thermal_conductivity": ["thermalConductivity", "conductivity", "k"],
 }
 
+DEFAULT_TURBULENCE_MODEL_VALUES = {
+    "k-epsilon": 0,
+    "k-omega": 1,
+    "sst": 2,
+    "laminar": 3,
+}
+
+BOOL_LOOKUP_VALUES = {
+    True: True,
+    False: False,
+    "true": True,
+    "false": False,
+    "1": True,
+    "0": False,
+    "yes": True,
+    "no": False,
+    "on": True,
+    "off": False,
+}
+
 
 def parse_scalar(value):
     if value is None:
@@ -365,6 +385,118 @@ def _resolve_mapping_value(raw_value, values_map):
     return False, raw_value, known
 
 
+def _merged_turbulence_value_map(config):
+    merged = dict(DEFAULT_TURBULENCE_MODEL_VALUES)
+    physics_cfg = config.get("physics_controls", {})
+    if not isinstance(physics_cfg, dict):
+        return merged
+    custom_map = physics_cfg.get("turbulence_model_values", {})
+    if not isinstance(custom_map, dict):
+        return merged
+    for key, value in custom_map.items():
+        key_text = str(key).strip()
+        if key_text:
+            merged[key_text] = value
+    return merged
+
+
+def _build_builtin_physics_switch_mappings(config):
+    turbulence_values = _merged_turbulence_value_map(config)
+    return [
+        {
+            "source_column": "heat_transfer",
+            "target_type": "scenario_setting",
+            "property": "heatTransfer",
+            "property_aliases": [
+                "includeHeatTransfer",
+                "solveHeatTransfer",
+                "heatTransferEnabled",
+            ],
+            "values": BOOL_LOOKUP_VALUES,
+        },
+        {
+            "source_column": "radiation",
+            "target_type": "scenario_setting",
+            "property": "radiation",
+            "property_aliases": [
+                "includeRadiation",
+                "solveRadiation",
+                "radiationEnabled",
+            ],
+            "values": BOOL_LOOKUP_VALUES,
+        },
+        {
+            "source_column": "turbulence_enabled",
+            "target_type": "scenario_setting",
+            "property": "turbulence",
+            "property_aliases": [
+                "enableTurbulence",
+                "turbulenceEnabled",
+                "isTurbulent",
+            ],
+            "values": BOOL_LOOKUP_VALUES,
+        },
+        {
+            "source_column": "turbulence_model",
+            "target_type": "scenario_setting",
+            "property": "turbulence_model",
+            "property_aliases": [
+                "turbulenceModel",
+                "turbulenceModelType",
+            ],
+            "values": turbulence_values,
+        },
+    ]
+
+
+def _build_case_physics_mappings(config):
+    physics_cfg = config.get("physics_controls", {})
+    if not isinstance(physics_cfg, dict):
+        physics_cfg = {}
+    if not bool(physics_cfg.get("enabled", True)):
+        return []
+
+    mappings = []
+    if bool(physics_cfg.get("use_builtin_switches", True)):
+        mappings.extend(_build_builtin_physics_switch_mappings(config))
+
+    custom_switches = physics_cfg.get("switches", [])
+    if isinstance(custom_switches, list):
+        mappings.extend(custom_switches)
+    return mappings
+
+
+def _build_physics_signature(applied_mappings):
+    if not applied_mappings:
+        return ""
+    pairs = []
+    for item in applied_mappings:
+        if not isinstance(item, dict):
+            continue
+        key = str(item.get("source_column", "")).strip()
+        if not key:
+            continue
+        value = item.get("resolved_value")
+        pairs.append((key, _normalize_lookup_token(value)))
+    if not pairs:
+        return ""
+    pairs.sort(key=lambda p: p[0].lower())
+    return "|".join(f"{key}={value}" for key, value in pairs)
+
+
+def apply_case_physics_controls(scenario, case_row, config, messages, warnings):
+    mappings = _build_case_physics_mappings(config)
+    if not mappings:
+        return []
+    return apply_parameter_mappings(
+        scenario,
+        case_row,
+        mappings,
+        messages,
+        warnings,
+    )
+
+
 def _normalize_fluid_preset_properties(raw_properties):
     normalized = []
     if isinstance(raw_properties, dict):
@@ -506,7 +638,8 @@ def apply_fluid_preset(scenario, case_row, config, messages, warnings):
 
 def apply_parameter_mappings(scenario, case_row, mappings, messages, warnings):
     if not isinstance(mappings, list):
-        return
+        return []
+    applied = []
     for raw_mapping in mappings:
         mapping = _normalize_mapping(raw_mapping)
         source_column = mapping.get("source_column")
@@ -560,6 +693,17 @@ def apply_parameter_mappings(scenario, case_row, mappings, messages, warnings):
             f"Applied mapping '{source_column}' -> {target_type}.{property_name} "
             f"for {len(targets)} target(s)."
         )
+        applied.append(
+            {
+                "source_column": source_column,
+                "target_type": target_type,
+                "property": property_name,
+                "raw_value": raw_value,
+                "resolved_value": resolved_value,
+                "target_count": len(targets),
+            }
+        )
+    return applied
 
 
 def apply_solver_overrides(scenario, overrides, messages, warnings):
@@ -977,6 +1121,8 @@ def main():
         "mesh_params_used": {},
         "mesh_quality": {},
         "failure_type": "",
+        "physics_controls": {},
+        "physics_signature": "",
     }
 
     try:
@@ -1009,6 +1155,25 @@ def main():
             result["messages"],
             result["warnings"],
         )
+        physics_applied = apply_case_physics_controls(
+            scenario,
+            case,
+            config,
+            result["messages"],
+            result["warnings"],
+        )
+        if physics_applied:
+            controls = {}
+            for item in physics_applied:
+                source = str(item.get("source_column", "")).strip()
+                if source:
+                    controls[source] = item.get("resolved_value")
+            result["physics_controls"] = controls
+            result["physics_signature"] = _build_physics_signature(physics_applied)
+            if result["physics_signature"]:
+                result["messages"].append(
+                    f"Physics signature: {result['physics_signature']}"
+                )
         apply_fluid_preset(
             scenario,
             case,

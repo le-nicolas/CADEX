@@ -125,6 +125,35 @@ def _mapping_match(mapping: dict[str, Any]) -> dict[str, Any]:
     return match
 
 
+def _physics_switch_source_columns(config: dict[str, Any]) -> list[str]:
+    physics_cfg = config.get("physics_controls", {}) if isinstance(config.get("physics_controls", {}), dict) else {}
+    if not bool(physics_cfg.get("enabled", True)):
+        return []
+
+    out: list[str] = []
+    if bool(physics_cfg.get("use_builtin_switches", True)):
+        out.extend(["heat_transfer", "radiation", "turbulence_enabled", "turbulence_model"])
+    out.append("fluid_preset")
+
+    custom_switches = physics_cfg.get("switches", [])
+    if isinstance(custom_switches, list):
+        for item in custom_switches:
+            if not isinstance(item, dict):
+                continue
+            name = _mapping_source_column(item)
+            if name:
+                out.append(name)
+    dedup: list[str] = []
+    seen = set()
+    for name in out:
+        key = name.strip().lower()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        dedup.append(name)
+    return dedup
+
+
 def _normalize_rows(
     rows: Any,
     *,
@@ -238,6 +267,9 @@ class LLMCaseGenerator:
                 continue
             name = _mapping_source_column(mapping)
             if name and name not in columns:
+                columns.append(name)
+        for name in _physics_switch_source_columns(config):
+            if name not in columns:
                 columns.append(name)
 
         for row in existing_rows[:8]:

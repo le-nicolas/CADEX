@@ -256,6 +256,14 @@ def run_postprocess(
             "attempts": case_result.get("attempts", 1),
         }
         row.update(case_result.get("metrics", {}))
+        physics_controls = case_result.get("physics_controls", {})
+        if isinstance(physics_controls, dict):
+            for key, value in physics_controls.items():
+                col_name = f"physics_{str(key).strip()}"
+                row[col_name] = value
+        physics_signature = str(case_result.get("physics_signature", "")).strip()
+        if physics_signature:
+            row["physics_signature"] = physics_signature
         rows.append(row)
 
     df = pd.DataFrame(rows)

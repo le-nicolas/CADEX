@@ -738,6 +738,23 @@ class AutomationRunner:
             "postprocess": post.summary,
         }
 
+        physics_profiles = sorted(
+            {
+                str(item.get("physics_signature", "")).strip()
+                for item in all_case_results
+                if item.get("success") and str(item.get("physics_signature", "")).strip()
+            }
+        )
+        if physics_profiles:
+            summary["physics_profiles"] = physics_profiles
+            if len(physics_profiles) > 1:
+                warning = (
+                    f"Detected {len(physics_profiles)} different physics profiles across successful cases. "
+                    "Interpret ranking/optimizer comparisons carefully."
+                )
+                summary["comparability_warning"] = warning
+                self._emit(progress, type="run_warning", message=warning)
+
         write_json(run_dir / "run_summary.json", summary)
         write_json(self.latest_run_path, summary)
         self._save_state(state)

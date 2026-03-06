@@ -210,6 +210,8 @@ class RunManager:
             elif event_type == "run_finished":
                 self._state["last_summary"] = enrich_summary(event.get("summary", {}))
                 self._append_log("Run finished.")
+            elif event_type == "run_warning":
+                self._append_log(f"Run warning: {event.get('message', '')}")
             else:
                 self._append_log(str(event))
 
