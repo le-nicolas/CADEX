@@ -61,6 +61,21 @@ def _operator_holds(value: float | None, operator: str, threshold: float) -> boo
     return False
 
 
+def skopt_runtime_status() -> dict[str, Any]:
+    try:
+        import skopt  # type: ignore  # noqa: F401
+    except Exception as ex:
+        return {
+            "available": False,
+            "mode": "random_fallback",
+            "warning": (
+                f"scikit-optimize is not available ({ex.__class__.__name__}: {ex}). "
+                "Design loop is using random sampling fallback."
+            ),
+        }
+    return {"available": True, "mode": "bayesian_gp", "warning": ""}
+
+
 class BayesianCaseOptimizer:
     def __init__(self, search_space: list[dict[str, Any]], seed: int = 42):
         if not search_space:
@@ -68,7 +83,13 @@ class BayesianCaseOptimizer:
         self._random = random.Random(seed)
         self._dims = self._parse_search_space(search_space)
         self._names = [dim.name for dim in self._dims]
-        self._skopt_optimizer = self._build_skopt_optimizer(self._dims, seed)
+        self._skopt_optimizer, self._optimizer_warning = self._build_skopt_optimizer(self._dims, seed)
+
+    def mode(self) -> str:
+        return "bayesian_gp" if self._skopt_optimizer is not None else "random_fallback"
+
+    def warning(self) -> str:
+        return self._optimizer_warning
 
     @staticmethod
     def _parse_search_space(search_space: list[dict[str, Any]]) -> list[SpaceDimension]:
@@ -115,8 +136,11 @@ class BayesianCaseOptimizer:
         try:
             from skopt import Optimizer
             from skopt.space import Categorical, Integer, Real
-        except Exception:
-            return None
+        except Exception as ex:
+            return None, (
+                f"scikit-optimize is not available ({ex.__class__.__name__}: {ex}). "
+                "Design loop is using random sampling fallback."
+            )
 
         sk_dims = []
         for dim in dims:
@@ -126,12 +150,19 @@ class BayesianCaseOptimizer:
                 sk_dims.append(Integer(int(dim.low), int(dim.high), name=dim.name))
             else:
                 sk_dims.append(Categorical(dim.choices or [], name=dim.name))
-        return Optimizer(
-            dimensions=sk_dims,
-            base_estimator="GP",
-            acq_func="EI",
-            random_state=seed,
-        )
+        try:
+            optimizer = Optimizer(
+                dimensions=sk_dims,
+                base_estimator="GP",
+                acq_func="EI",
+                random_state=seed,
+            )
+            return optimizer, ""
+        except Exception as ex:
+            return None, (
+                f"scikit-optimize Optimizer initialization failed "
+                f"({ex.__class__.__name__}: {ex}). Design loop is using random sampling fallback."
+            )
 
     def _random_point(self) -> list[Any]:
         values = []
@@ -339,6 +370,8 @@ class GenerativeDesignLoop:
         loop_dir = ensure_dir(self.runner.runtime_dir / "design_loops" / loop_id)
         original_cases_csv = self.runner.get_cases_csv()
         optimizer = BayesianCaseOptimizer(search_space, seed=seed)
+        optimizer_mode = optimizer.mode()
+        optimizer_warning = optimizer.warning()
 
         narrator = None
         if llm_explain:
@@ -360,6 +393,8 @@ class GenerativeDesignLoop:
             batch_size=batch_size,
             max_batches=max_batches,
             constraints=constraints,
+            optimizer_mode=optimizer_mode,
+            optimizer_warning=optimizer_warning,
         )
 
         try:
@@ -471,6 +506,8 @@ class GenerativeDesignLoop:
                 "batch_size": batch_size,
                 "max_batches": max_batches,
                 "completed_batches": len(history),
+                "optimizer_mode": optimizer_mode,
+                "optimizer_warning": optimizer_warning,
                 "best_case": best_record or {},
                 "history": history,
                 "loop_dir": str(loop_dir),

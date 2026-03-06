@@ -16,6 +16,7 @@ from cfd_automation import (
     LLMMeshAdvisor,
     SurrogateEngine,
 )
+from cfd_automation.design_loop import skopt_runtime_status
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -270,6 +271,7 @@ run_manager = RunManager()
 
 class DesignLoopManager:
     def __init__(self) -> None:
+        dep = skopt_runtime_status()
         self._lock = Lock()
         self._state: dict[str, Any] = {
             "running": False,
@@ -284,6 +286,8 @@ class DesignLoopManager:
             "last_error": "",
             "last_summary": {},
             "stop_requested": False,
+            "optimizer_mode": dep.get("mode", "random_fallback"),
+            "optimizer_warning": dep.get("warning", ""),
         }
 
     def _append_log(self, line: str) -> None:
@@ -301,11 +305,15 @@ class DesignLoopManager:
                 self._state["current_batch"] = 0
                 self._state["completed_batches"] = 0
                 self._state["max_batches"] = int(event.get("max_batches", 0))
+                self._state["optimizer_mode"] = event.get("optimizer_mode", self._state.get("optimizer_mode", ""))
+                self._state["optimizer_warning"] = event.get("optimizer_warning", "")
                 self._append_log(
                     "Design loop started. "
                     f"objective={event.get('objective_alias')} goal={event.get('objective_goal')} "
                     f"batch_size={event.get('batch_size')} max_batches={self._state['max_batches']}"
                 )
+                if self._state.get("optimizer_warning"):
+                    self._append_log(f"WARNING: {self._state.get('optimizer_warning')}")
             elif event_type == "loop_batch_started":
                 batch_index = int(event.get("batch_index", 0))
                 self._state["current_batch"] = batch_index
@@ -345,6 +353,8 @@ class DesignLoopManager:
                 summary = event.get("summary", {}) if isinstance(event.get("summary", {}), dict) else {}
                 self._state["last_summary"] = summary
                 self._state["status"] = summary.get("status", "finished")
+                self._state["optimizer_mode"] = summary.get("optimizer_mode", self._state.get("optimizer_mode", ""))
+                self._state["optimizer_warning"] = summary.get("optimizer_warning", self._state.get("optimizer_warning", ""))
                 best_case = summary.get("best_case", {}) if isinstance(summary.get("best_case", {}), dict) else {}
                 self._append_log(
                     f"Design loop finished with status={self._state['status']}. "
@@ -354,6 +364,7 @@ class DesignLoopManager:
                 self._append_log(str(event))
 
     def start(self, payload: dict[str, Any]) -> tuple[bool, str]:
+        dep = skopt_runtime_status()
         with self._lock:
             if self._state.get("running"):
                 return False, "A design loop is already in progress."
@@ -367,6 +378,10 @@ class DesignLoopManager:
             self._state["last_error"] = ""
             self._state["last_summary"] = {}
             self._state["stop_requested"] = False
+            self._state["optimizer_mode"] = dep.get("mode", "random_fallback")
+            self._state["optimizer_warning"] = dep.get("warning", "")
+            if self._state["optimizer_warning"]:
+                self._append_log(f"WARNING: {self._state['optimizer_warning']}")
 
         def worker() -> None:
             try:

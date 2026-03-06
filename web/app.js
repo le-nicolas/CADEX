@@ -556,16 +556,22 @@ function buildDesignLoopPayload() {
 
 function renderDesignLoopStatus(payload) {
   const lines = [];
+  const summary = payload.last_summary || {};
+  const optimizerMode = payload.optimizer_mode || summary.optimizer_mode || "-";
+  const optimizerWarning = payload.optimizer_warning || summary.optimizer_warning || "";
   lines.push(`Running: ${payload.running ? "yes" : "no"}`);
   lines.push(`Status: ${payload.status || "-"}`);
   lines.push(`Loop ID: ${payload.loop_id || "-"}`);
   lines.push(`Batch: ${payload.current_batch || 0} / ${payload.max_batches || 0}`);
   lines.push(`Completed Batches: ${payload.completed_batches || 0}`);
+  lines.push(`Optimizer: ${optimizerMode}`);
+  if (optimizerWarning) {
+    lines.push(`WARNING: ${optimizerWarning}`);
+  }
   if (payload.last_error) {
     lines.push(`Last Error: ${payload.last_error}`);
   }
 
-  const summary = payload.last_summary || {};
   if (summary.best_case) {
     lines.push("");
     lines.push("Best Case:");

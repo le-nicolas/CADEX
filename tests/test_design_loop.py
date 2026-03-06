@@ -120,3 +120,29 @@ def test_design_loop_can_be_stopped(tmp_path: Path, monkeypatch) -> None:
 
     assert summary["status"] == "stopped"
     assert summary["completed_batches"] == 1
+
+
+def test_design_loop_reports_optimizer_mode(tmp_path: Path, monkeypatch) -> None:
+    project = _make_project(tmp_path)
+    monkeypatch.setenv("CFD_AUTOMATION_DRY_RUN", "1")
+
+    runner = AutomationRunner(project)
+    loop = GenerativeDesignLoop(runner)
+    summary = loop.run(
+        payload={
+            "objective_alias": "fin_height_mm",
+            "objective_goal": "min",
+            "search_space": [
+                {"name": "fin_height_mm", "type": "real", "min": 5, "max": 20},
+            ],
+            "batch_size": 1,
+            "max_batches": 1,
+            "use_llm_explanations": False,
+        }
+    )
+
+    assert summary["optimizer_mode"] in {"bayesian_gp", "random_fallback"}
+    if summary["optimizer_mode"] == "random_fallback":
+        assert summary["optimizer_warning"]
+    else:
+        assert summary["optimizer_warning"] == ""
