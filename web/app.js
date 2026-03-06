@@ -145,6 +145,50 @@ function renderLinks(summary) {
     a.textContent = label;
     ui.resultsLinks.appendChild(a);
   }
+
+  const rows = Array.isArray(summary.case_results) ? summary.case_results : [];
+  const caseAssets = rows
+    .map((row) => {
+      const screenshots = Array.isArray(row.screenshot_urls)
+        ? row.screenshot_urls.filter((url) => Boolean(url))
+        : [];
+      const linksForCase = [];
+      if (row.summary_csv_url) linksForCase.push(["Summary CSV", row.summary_csv_url]);
+      if (row.metrics_csv_url) linksForCase.push(["Metrics CSV", row.metrics_csv_url]);
+      screenshots.forEach((url, idx) => linksForCase.push([`Screenshot ${idx + 1}`, url]));
+      return {
+        caseId: String(row.case_id || ""),
+        links: linksForCase,
+      };
+    })
+    .filter((item) => item.links.length > 0);
+
+  if (!caseAssets.length) {
+    return;
+  }
+
+  const heading = document.createElement("div");
+  heading.className = "helper";
+  heading.textContent = "Per-case output files:";
+  ui.resultsLinks.appendChild(heading);
+
+  for (const item of caseAssets) {
+    const rowWrap = document.createElement("div");
+    rowWrap.className = "helper";
+    rowWrap.appendChild(document.createTextNode(`${item.caseId || "case"}: `));
+    item.links.forEach(([label, href], idx) => {
+      const a = document.createElement("a");
+      a.href = href;
+      a.target = "_blank";
+      a.rel = "noreferrer";
+      a.textContent = label;
+      rowWrap.appendChild(a);
+      if (idx < item.links.length - 1) {
+        rowWrap.appendChild(document.createTextNode(" | "));
+      }
+    });
+    ui.resultsLinks.appendChild(rowWrap);
+  }
 }
 
 function renderResultsTable(summary) {

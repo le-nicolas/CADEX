@@ -168,7 +168,7 @@ This is the automated loop:
     {"name": "flow_rate_lpm", "type": "real", "min": 1, "max": 5}
   ],
   "constraints": [
-    {"alias": "pressure_drop_pa", "operator": "<=", "threshold": 50}
+    {"alias": "pressure_max_dyne_cm2", "operator": "<=", "threshold": 1500}
   ],
   "batch_size": 10,
   "max_batches": 5,
@@ -183,6 +183,7 @@ This is the automated loop:
 - If unavailable, it falls back to random sampling (functional but less sample-efficient).
 - Loop artifacts are saved in `runtime/design_loops/<loop_id>/`.
 - Loop can be started/stopped from the web dashboard section **Generative Design Loop**.
+- Constraint aliases must match configured metric aliases (for example `pressure_max_dyne_cm2`).
 
 ## LLM Case Builder
 
@@ -191,6 +192,8 @@ You can generate `cases.csv` using plain language in the **LLM Case Builder** pa
 Example prompt:
 
 `test inlet velocities from 1 to 5 m/s in 1 m/s steps with two turbulence models k-epsilon and k-omega while keeping ambient_temp_c at 25`
+
+Important: turbulence-model sweeps only change simulation inputs when you have matching `parameter_mappings` configured for the relevant CFD property. Otherwise, generated turbulence columns are not applied during solve.
 
 ### Provider Configuration
 
