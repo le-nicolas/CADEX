@@ -3,6 +3,7 @@ import os
 import traceback
 from pathlib import Path
 
+import CFD.Results as R
 import CFD.Setup as S
 
 
@@ -90,6 +91,43 @@ def dump_material_properties(material):
     return output
 
 
+def dump_summary_catalog(scenario):
+    payload = {
+        "available": False,
+        "sections": [],
+        "warnings": [],
+    }
+    try:
+        if not bool(scenario.hasResults):
+            payload["warnings"].append(
+                "Selected scenario has no results; Summary API catalog is unavailable."
+            )
+            return payload
+
+        summary = R.Summary(scenario)
+        summary.load()
+        sections = []
+        for section in summary.sections():
+            section_name = str(section)
+            quantities = []
+            for quantity in summary.quantities(section):
+                quantity_name = str(quantity)
+                unit = ""
+                try:
+                    unit = str(summary.unit(section, quantity))
+                except Exception:
+                    unit = ""
+                quantities.append({"name": quantity_name, "unit": unit})
+            sections.append({"name": section_name, "quantities": quantities})
+
+        payload["available"] = True
+        payload["sections"] = sections
+        return payload
+    except Exception as ex:
+        payload["warnings"].append(f"Summary catalog extraction failed: {ex}")
+        return payload
+
+
 def main():
     study_path = os.environ.get("CFD_AUTOMATION_STUDY", "").strip()
     output_path = os.environ.get("CFD_AUTOMATION_OUTPUT", "").strip()
@@ -156,6 +194,7 @@ def main():
                 "design": str(selected_scenario.design().name),
                 "scenario": str(selected_scenario.name),
                 "properties": dump_properties(selected_scenario),
+                "summary_catalog": dump_summary_catalog(selected_scenario),
             }
 
             bcs = S.BCList()

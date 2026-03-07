@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 import random
 from pathlib import Path
 from typing import Any, Callable
@@ -202,6 +203,10 @@ class BayesianCaseOptimizer:
     def tell(self, rows: list[dict[str, Any]], scores: list[float]) -> None:
         if self._skopt_optimizer is None:
             return
+        if not rows or not scores:
+            return
+        if len(rows) != len(scores):
+            return
         points = []
         for row in rows:
             point = [row.get(name) for name in self._names]
@@ -365,6 +370,66 @@ class GenerativeDesignLoop:
 
         restore_cases = bool(payload.get("restore_cases_csv", design_cfg.get("restore_cases_csv_after_run", True)))
         llm_explain = bool(payload.get("use_llm_explanations", design_cfg.get("use_llm_explanations", True)))
+        preflight_enabled = bool(
+            payload.get("metric_contract_preflight", design_cfg.get("metric_contract_preflight", True))
+        )
+        dry_run = os.environ.get("CFD_AUTOMATION_DRY_RUN", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+
+        preflight_result: dict[str, Any] = {}
+        if preflight_enabled and not dry_run:
+            preflight_result = self.runner.validate_metric_contract(
+                study_override=str(payload.get("study_path", "")).strip() or None
+            )
+            if not preflight_result.get("ok", False):
+                missing = preflight_result.get("missing_metrics", [])
+                if isinstance(missing, list) and missing:
+                    sample = []
+                    for item in missing[:5]:
+                        if not isinstance(item, dict):
+                            continue
+                        sample.append(
+                            f"{item.get('alias', '<unknown>')} "
+                            f"[{item.get('section', '')} :: {item.get('quantity', '')}]"
+                        )
+                    sample_text = "; ".join(sample) if sample else "unknown metric mismatch"
+                    raise ValueError(
+                        "Metric contract preflight failed. Configured metrics missing from Autodesk CFD summary catalog: "
+                        + sample_text
+                    )
+                raise ValueError("Metric contract preflight failed with unknown metric mismatch.")
+            _emit(
+                progress,
+                type="loop_preflight_ok",
+                checked_metrics=preflight_result.get("checked_metrics", 0),
+                available_metric_pairs=preflight_result.get("available_metric_pairs", 0),
+            )
+        elif preflight_enabled and dry_run:
+            preflight_result = {
+                "ok": True,
+                "skipped": True,
+                "reason": "dry_run",
+            }
+            _emit(
+                progress,
+                type="loop_preflight_skipped",
+                reason="dry_run",
+            )
+        else:
+            preflight_result = {
+                "ok": True,
+                "skipped": True,
+                "reason": "disabled",
+            }
+            _emit(
+                progress,
+                type="loop_preflight_skipped",
+                reason="disabled",
+            )
 
         loop_id = now_utc_stamp()
         loop_dir = ensure_dir(self.runner.runtime_dir / "design_loops" / loop_id)
@@ -433,7 +498,8 @@ class GenerativeDesignLoop:
                     if isinstance(item, dict)
                 }
 
-                scores: list[float] = []
+                optimizer_rows: list[dict[str, Any]] = []
+                optimizer_scores: list[float] = []
                 batch_records: list[dict[str, Any]] = []
                 for row in rows:
                     case_id = str(row.get("case_id", ""))
@@ -446,22 +512,61 @@ class GenerativeDesignLoop:
                         penalty_missing_objective=penalty_missing,
                         penalty_constraint=penalty_constraint,
                     )
+                    success = bool(case_result.get("success")) if case_result else False
+                    failure_type = case_result.get("failure_type", "") if case_result else ""
+                    failure_reason = (
+                        case_result.get("failure_reason", case_result.get("error", ""))
+                        if case_result
+                        else "missing_result"
+                    )
+                    if success and evaluated.get("objective_value") is None:
+                        success = False
+                        failure_type = "null_metric"
+                        failure_reason = (
+                            f"Objective alias '{objective_alias}' returned null/NaN for this case."
+                        )
+
                     record = {
                         "case_id": case_id,
                         "batch_index": batch_index,
                         "params": {k: v for k, v in row.items() if k != "case_id"},
-                        "success": bool(case_result.get("success")) if case_result else False,
-                        "failure_type": case_result.get("failure_type", "") if case_result else "",
-                        "failure_reason": case_result.get("failure_reason", case_result.get("error", "")) if case_result else "missing_result",
+                        "success": success,
+                        "failure_type": failure_type,
+                        "failure_reason": failure_reason,
                         "metrics": case_result.get("metrics", {}) if case_result else {},
                         **evaluated,
                     }
+                    if evaluated.get("objective_value") is None:
+                        violations = (
+                            list(record.get("constraint_violations", []))
+                            if isinstance(record.get("constraint_violations", []), list)
+                            else []
+                        )
+                        if "objective_missing" not in violations:
+                            violations.append("objective_missing")
+                        record["constraint_violations"] = violations
+                        record["constraints_pass"] = False
+
                     batch_records.append(record)
-                    scores.append(float(record["score"]))
+                    if record.get("objective_value") is not None:
+                        optimizer_rows.append(row)
+                        optimizer_scores.append(float(record["score"]))
+
                     if best_record is None or float(record["score"]) < float(best_record["score"]):
                         best_record = dict(record)
 
-                optimizer.tell(rows, scores)
+                optimizer.tell(optimizer_rows, optimizer_scores)
+                if not optimizer_rows:
+                    _emit(
+                        progress,
+                        type="loop_batch_warning",
+                        loop_id=loop_id,
+                        batch_index=batch_index,
+                        message=(
+                            "No valid objective values in this batch. "
+                            "Cases were marked as failure_type=null_metric."
+                        ),
+                    )
 
                 explanation = self._fallback_batch_explanation(batch_records, objective_alias)
                 narration = {"provider": "", "model": "", "text": explanation}
@@ -508,6 +613,7 @@ class GenerativeDesignLoop:
                 "completed_batches": len(history),
                 "optimizer_mode": optimizer_mode,
                 "optimizer_warning": optimizer_warning,
+                "metric_contract_preflight": preflight_result,
                 "best_case": best_record or {},
                 "history": history,
                 "loop_dir": str(loop_dir),

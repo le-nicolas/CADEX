@@ -98,6 +98,89 @@ class AutomationRunner:
             payload["data"] = read_json(output_path, default={})
         return payload
 
+    def validate_metric_contract(self, *, study_override: str | None = None) -> dict[str, Any]:
+        cfg = self.get_config()
+        metrics_cfg = cfg.get("metrics", []) if isinstance(cfg.get("metrics", []), list) else []
+        if not metrics_cfg:
+            return {
+                "ok": True,
+                "checked_metrics": 0,
+                "available_metric_pairs": 0,
+                "missing_metrics": [],
+                "warnings": ["No metrics configured; skipping contract check."],
+            }
+
+        introspection = self.introspect(study_override=study_override)
+        data = introspection.get("data", {}) if isinstance(introspection.get("data", {}), dict) else {}
+        if not data.get("ok"):
+            errors = data.get("errors", []) if isinstance(data.get("errors", []), list) else []
+            detail = "; ".join(str(item) for item in errors[:3]) if errors else "Introspection returned no usable data."
+            raise ValueError(f"Metric contract preflight failed during introspection: {detail}")
+
+        selected = data.get("selected", {}) if isinstance(data.get("selected", {}), dict) else {}
+        catalog = (
+            selected.get("summary_catalog", {})
+            if isinstance(selected.get("summary_catalog", {}), dict)
+            else {}
+        )
+        available = bool(catalog.get("available", False))
+        warnings = catalog.get("warnings", []) if isinstance(catalog.get("warnings", []), list) else []
+        if not available:
+            detail = "; ".join(str(item) for item in warnings[:3]) if warnings else "Summary catalog unavailable."
+            raise ValueError(
+                "Metric contract preflight failed: Autodesk CFD Summary API is unavailable for the selected scenario. "
+                + detail
+            )
+
+        available_pairs: set[tuple[str, str]] = set()
+        sections = catalog.get("sections", []) if isinstance(catalog.get("sections", []), list) else []
+        for section in sections:
+            if not isinstance(section, dict):
+                continue
+            section_name = str(section.get("name", "")).strip().lower()
+            quantities = section.get("quantities", []) if isinstance(section.get("quantities", []), list) else []
+            for quantity in quantities:
+                if not isinstance(quantity, dict):
+                    continue
+                quantity_name = str(quantity.get("name", "")).strip().lower()
+                if section_name and quantity_name:
+                    available_pairs.add((section_name, quantity_name))
+
+        missing: list[dict[str, str]] = []
+        for metric in metrics_cfg:
+            if not isinstance(metric, dict):
+                continue
+            alias = str(metric.get("alias", "")).strip()
+            section = str(metric.get("section", "")).strip().lower()
+            quantity = str(metric.get("quantity", "")).strip().lower()
+            if not alias or not section or not quantity:
+                missing.append(
+                    {
+                        "alias": alias or "<missing_alias>",
+                        "section": section,
+                        "quantity": quantity,
+                        "reason": "incomplete_metric_config",
+                    }
+                )
+                continue
+            if (section, quantity) not in available_pairs:
+                missing.append(
+                    {
+                        "alias": alias,
+                        "section": section,
+                        "quantity": quantity,
+                        "reason": "not_found_in_summary_catalog",
+                    }
+                )
+
+        return {
+            "ok": len(missing) == 0,
+            "checked_metrics": len(metrics_cfg),
+            "available_metric_pairs": len(available_pairs),
+            "missing_metrics": missing,
+            "warnings": [str(item) for item in warnings],
+        }
+
     def _load_state(self) -> dict[str, Any]:
         state = read_json(self.state_path, default={})
         if not isinstance(state, dict):

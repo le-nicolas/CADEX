@@ -331,6 +331,21 @@ class DesignLoopManager:
                 )
                 if narration.get("text"):
                     self._append_log(f"LLM insight: {str(narration.get('text'))[:900]}")
+            elif event_type == "loop_preflight_ok":
+                self._append_log(
+                    "Metric contract preflight passed. "
+                    f"checked_metrics={event.get('checked_metrics', 0)} "
+                    f"available_pairs={event.get('available_metric_pairs', 0)}"
+                )
+            elif event_type == "loop_preflight_skipped":
+                self._append_log(
+                    "Metric contract preflight skipped. "
+                    f"reason={event.get('reason', 'unknown')}"
+                )
+            elif event_type == "loop_batch_warning":
+                self._append_log(
+                    f"Batch {event.get('batch_index', 0)} warning: {event.get('message', '')}"
+                )
             elif event_type == "loop_run_event":
                 nested = event.get("event", {}) if isinstance(event.get("event", {}), dict) else {}
                 nested_type = str(nested.get("type", ""))

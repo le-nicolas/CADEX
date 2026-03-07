@@ -70,6 +70,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "random_seed": 42,
         "penalty_missing_objective": 1000000000.0,
         "penalty_constraint": 1000000.0,
+        "metric_contract_preflight": True,
         "restore_cases_csv_after_run": True,
         "use_llm_explanations": True,
     },

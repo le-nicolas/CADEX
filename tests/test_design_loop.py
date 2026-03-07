@@ -146,3 +146,73 @@ def test_design_loop_reports_optimizer_mode(tmp_path: Path, monkeypatch) -> None
         assert summary["optimizer_warning"]
     else:
         assert summary["optimizer_warning"] == ""
+
+
+def test_design_loop_marks_null_objective_as_failed(tmp_path: Path, monkeypatch) -> None:
+    project = _make_project(tmp_path)
+    monkeypatch.setenv("CFD_AUTOMATION_DRY_RUN", "1")
+
+    runner = AutomationRunner(project)
+    loop = GenerativeDesignLoop(runner)
+    summary = loop.run(
+        payload={
+            "objective_alias": "temp_max_c",
+            "objective_goal": "min",
+            "search_space": [
+                {"name": "fin_height_mm", "type": "real", "min": 5, "max": 20},
+            ],
+            "batch_size": 2,
+            "max_batches": 1,
+            "use_llm_explanations": False,
+        }
+    )
+
+    assert summary["completed_batches"] == 1
+    batch = summary["history"][0]
+    for item in batch["cases"]:
+        assert item["success"] is False
+        assert item["failure_type"] == "null_metric"
+        assert item["objective_value"] is None
+
+
+def test_metric_contract_validation_detects_missing_aliases(tmp_path: Path, monkeypatch) -> None:
+    project = _make_project(tmp_path)
+    runner = AutomationRunner(project)
+
+    cfg = runner.get_config()
+    cfg["metrics"] = [
+        {
+            "alias": "temp_max_c",
+            "section": "field variable results summary",
+            "quantity": "temp.max",
+            "unit": "C",
+        }
+    ]
+    runner.save_config(cfg)
+
+    monkeypatch.setattr(
+        runner,
+        "introspect",
+        lambda study_override=None: {
+            "data": {
+                "ok": True,
+                "selected": {
+                    "summary_catalog": {
+                        "available": True,
+                        "warnings": [],
+                        "sections": [
+                            {
+                                "name": "other section",
+                                "quantities": [{"name": "other.quantity", "unit": ""}],
+                            }
+                        ],
+                    }
+                },
+            }
+        },
+    )
+
+    result = runner.validate_metric_contract()
+    assert result["ok"] is False
+    assert len(result["missing_metrics"]) == 1
+    assert result["missing_metrics"][0]["alias"] == "temp_max_c"
