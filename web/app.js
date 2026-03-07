@@ -62,9 +62,16 @@ const ui = {
   surrogateStatus: document.getElementById("surrogateStatus"),
   surrogatePredictOutput: document.getElementById("surrogatePredictOutput"),
   surrogateCoverage: document.getElementById("surrogateCoverage"),
+  historyStudyFilter: document.getElementById("historyStudyFilter"),
+  historyCaseFilter: document.getElementById("historyCaseFilter"),
+  historyRefreshBtn: document.getElementById("historyRefreshBtn"),
+  historyMeta: document.getElementById("historyMeta"),
+  historyRunsWrap: document.getElementById("historyRunsWrap"),
+  historyCases: document.getElementById("historyCases"),
 };
 
 let currentConfig = null;
+let historySelectedRunId = "";
 
 function getApiKey() {
   const key = (ui.apiKeyInput.value || localStorage.getItem("cfd_api_key") || "").trim();
@@ -294,6 +301,143 @@ function renderSummary(summary) {
   renderResultsTable(summary);
   renderFailureDetails(summary);
   renderCharts(summary);
+}
+
+function shortText(value, maxLen = 90) {
+  const text = String(value || "").trim();
+  if (!text) return "-";
+  if (text.length <= maxLen) return text;
+  return `${text.slice(0, maxLen - 3)}...`;
+}
+
+function formatUtc(value) {
+  const text = String(value || "").trim();
+  if (!text) return "-";
+  const parsed = new Date(text);
+  if (Number.isNaN(parsed.getTime())) return text;
+  return parsed.toLocaleString();
+}
+
+function renderHistoryRuns(payload) {
+  const rows = Array.isArray(payload.runs) ? payload.runs : [];
+  ui.historyMeta.textContent = `Stored runs: ${payload.total || 0}`;
+  ui.historyRunsWrap.innerHTML = "";
+  if (!rows.length) {
+    ui.historyRunsWrap.textContent = "No run history found for this filter.";
+    return;
+  }
+
+  const table = document.createElement("table");
+  const thead = document.createElement("thead");
+  const headRow = document.createElement("tr");
+  ["run_id", "created_at", "mode", "study_path", "success/failed", ""].forEach((label) => {
+    const th = document.createElement("th");
+    th.textContent = label;
+    headRow.appendChild(th);
+  });
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+  for (const row of rows) {
+    const tr = document.createElement("tr");
+
+    const tdRun = document.createElement("td");
+    tdRun.textContent = row.run_id || "";
+    tr.appendChild(tdRun);
+
+    const tdTime = document.createElement("td");
+    tdTime.textContent = formatUtc(row.created_at);
+    tr.appendChild(tdTime);
+
+    const tdMode = document.createElement("td");
+    tdMode.textContent = row.mode || "-";
+    tr.appendChild(tdMode);
+
+    const tdStudy = document.createElement("td");
+    tdStudy.textContent = shortText(row.study_path || "", 88);
+    tdStudy.title = row.study_path || "";
+    tr.appendChild(tdStudy);
+
+    const tdScore = document.createElement("td");
+    tdScore.textContent = `${row.successful_cases || 0}/${row.failed_cases || 0}`;
+    tr.appendChild(tdScore);
+
+    const tdOpen = document.createElement("td");
+    const btn = document.createElement("button");
+    btn.textContent = "Load";
+    btn.className = historySelectedRunId === row.run_id ? "accent" : "";
+    btn.addEventListener("click", async () => {
+      try {
+        await loadHistoryRun(row.run_id);
+      } catch (err) {
+        flash(`Load history run failed: ${err.message}`);
+      }
+    });
+    tdOpen.appendChild(btn);
+    tr.appendChild(tdOpen);
+
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+  ui.historyRunsWrap.appendChild(table);
+}
+
+function renderHistoryCases(payload) {
+  const rows = Array.isArray(payload.cases) ? payload.cases : [];
+  if (!rows.length) {
+    ui.historyCases.textContent = "No case records found for this filter.";
+    return;
+  }
+  const lines = [];
+  lines.push(`Case records: ${payload.total || 0}`);
+  lines.push("");
+  for (const row of rows.slice(0, 40)) {
+    const metrics = row.metrics || {};
+    lines.push(
+      `[${row.run_id}] ${row.case_id} :: ${row.success ? "success" : "failed"} ` +
+      `${row.failure_type ? `(${row.failure_type})` : ""}`
+    );
+    const metricKeys = Object.keys(metrics);
+    if (metricKeys.length) {
+      const metricPreview = metricKeys
+        .slice(0, 4)
+        .map((key) => `${key}=${metrics[key]}`)
+        .join(", ");
+      lines.push(`  metrics: ${metricPreview}`);
+    }
+    if (!row.success && row.failure_reason) {
+      lines.push(`  reason: ${shortText(row.failure_reason, 180)}`);
+    }
+  }
+  if (rows.length > 40) {
+    lines.push("");
+    lines.push(`Showing first 40 records from ${rows.length} loaded.`);
+  }
+  ui.historyCases.textContent = lines.join("\n");
+}
+
+async function loadHistoryRun(runId) {
+  const payload = await callApi(`/api/history/runs/${encodeURIComponent(runId)}`);
+  historySelectedRunId = runId;
+  renderSummary(payload.summary || {});
+  flash(`Loaded historical run ${runId}.`);
+}
+
+async function refreshHistory() {
+  const params = new URLSearchParams();
+  params.set("limit", "30");
+  const studyFilter = (ui.historyStudyFilter.value || "").trim();
+  const caseFilter = (ui.historyCaseFilter.value || "").trim();
+  if (studyFilter) params.set("study_path", studyFilter);
+  if (caseFilter) params.set("case_id", caseFilter);
+
+  const [runsPayload, casesPayload] = await Promise.all([
+    callApi(`/api/history/runs?${params.toString()}`),
+    callApi(`/api/history/cases?${params.toString()}&limit=120`),
+  ]);
+  renderHistoryRuns(runsPayload);
+  renderHistoryCases(casesPayload);
 }
 
 function syncStudyPathInput() {
@@ -832,6 +976,7 @@ async function boot() {
       loadCases(),
       refreshStatus(),
       refreshLatestRun(),
+      refreshHistory(),
       refreshDesignLoopStatus(),
       refreshSurrogateStatus(),
     ]);
@@ -852,6 +997,33 @@ ui.apiKeyInput.addEventListener("keyup", (event) => {
 ui.reloadBtn.addEventListener("click", async () => {
   await boot();
   flash("Reloaded config, cases, status, and latest run.");
+});
+
+ui.historyRefreshBtn.addEventListener("click", async () => {
+  try {
+    await refreshHistory();
+    flash("History refreshed.");
+  } catch (err) {
+    flash(`History refresh failed: ${err.message}`);
+  }
+});
+
+ui.historyStudyFilter.addEventListener("keyup", async (event) => {
+  if (event.key !== "Enter") return;
+  try {
+    await refreshHistory();
+  } catch (err) {
+    flash(`History filter failed: ${err.message}`);
+  }
+});
+
+ui.historyCaseFilter.addEventListener("keyup", async (event) => {
+  if (event.key !== "Enter") return;
+  try {
+    await refreshHistory();
+  } catch (err) {
+    flash(`History filter failed: ${err.message}`);
+  }
 });
 
 ui.saveConfigBtn.addEventListener("click", async () => {

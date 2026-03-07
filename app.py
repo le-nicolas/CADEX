@@ -47,6 +47,24 @@ def to_runtime_url(path_value: str) -> str | None:
         return None
 
 
+def enrich_case_assets(case: dict[str, Any]) -> dict[str, Any]:
+    item = dict(case)
+    screenshot_paths = item.get("screenshots", [])
+    if not isinstance(screenshot_paths, list):
+        screenshot_paths = []
+    item["summary_csv_url"] = to_runtime_url(str(item.get("summary_csv", "")))
+    item["metrics_csv_url"] = to_runtime_url(str(item.get("metrics_csv", "")))
+    item["screenshot_urls"] = [
+        to_runtime_url(str(path))
+        for path in screenshot_paths
+        if str(path).strip()
+    ]
+    item["failure_reason"] = item.get("failure_reason") or item.get("error", "")
+    item["failure_type"] = item.get("failure_type", "")
+    item["failure_mode"] = item.get("failure_mode", "")
+    return item
+
+
 def enrich_summary(summary: dict[str, Any]) -> dict[str, Any]:
     if not summary:
         return {}
@@ -62,16 +80,22 @@ def enrich_summary(summary: dict[str, Any]) -> dict[str, Any]:
 
     case_results = []
     for case in out.get("case_results", []):
-        item = dict(case)
-        item["summary_csv_url"] = to_runtime_url(item.get("summary_csv", ""))
-        item["metrics_csv_url"] = to_runtime_url(item.get("metrics_csv", ""))
-        item["screenshot_urls"] = [to_runtime_url(path) for path in item.get("screenshots", [])]
-        item["failure_reason"] = item.get("failure_reason") or item.get("error", "")
-        item["failure_type"] = item.get("failure_type", "")
-        item["failure_mode"] = item.get("failure_mode", "")
-        case_results.append(item)
+        case_results.append(enrich_case_assets(case))
     out["case_results"] = case_results
     return out
+
+
+def parse_optional_bool(value: str | None) -> bool | None:
+    if value is None:
+        return None
+    text = str(value).strip().lower()
+    if not text:
+        return None
+    if text in {"1", "true", "yes", "on"}:
+        return True
+    if text in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError("Expected boolean query value: true/false")
 
 
 def merge_mesh_suggestion_into_config(config: dict[str, Any], suggestion: dict[str, Any]) -> dict[str, Any]:
@@ -759,6 +783,77 @@ def api_design_loop_status():
 @app.get("/api/design-loop/latest")
 def api_design_loop_latest():
     return jsonify(design_loop_manager.latest())
+
+
+@app.get("/api/history/runs")
+def api_history_runs():
+    try:
+        limit = int(request.args.get("limit", "40"))
+    except ValueError:
+        limit = 40
+    try:
+        offset = int(request.args.get("offset", "0"))
+    except ValueError:
+        offset = 0
+    limit = max(1, min(limit, 1000))
+    offset = max(0, offset)
+    study_path = str(request.args.get("study_path", "")).strip()
+    mode = str(request.args.get("mode", "")).strip()
+    case_id = str(request.args.get("case_id", "")).strip()
+    payload = runner.history_store.list_runs(
+        limit=limit,
+        offset=offset,
+        study_path=study_path,
+        mode=mode,
+        case_id=case_id,
+    )
+    return jsonify({"ok": True, **payload})
+
+
+@app.get("/api/history/runs/<run_id>")
+def api_history_run(run_id: str):
+    summary = runner.history_store.get_run(run_id)
+    if not summary:
+        return jsonify({"ok": False, "error": "Run not found."}), 404
+    return jsonify({"ok": True, "summary": enrich_summary(summary)})
+
+
+@app.get("/api/history/cases")
+def api_history_cases():
+    try:
+        limit = int(request.args.get("limit", "120"))
+    except ValueError:
+        limit = 120
+    try:
+        offset = int(request.args.get("offset", "0"))
+    except ValueError:
+        offset = 0
+    limit = max(1, min(limit, 2000))
+    offset = max(0, offset)
+    study_path = str(request.args.get("study_path", "")).strip()
+    case_id = str(request.args.get("case_id", "")).strip()
+    success: bool | None
+    try:
+        success = parse_optional_bool(request.args.get("success"))
+    except ValueError as ex:
+        return jsonify({"ok": False, "error": str(ex)}), 400
+    payload = runner.history_store.list_cases(
+        limit=limit,
+        offset=offset,
+        study_path=study_path,
+        case_id=case_id,
+        success=success,
+    )
+    enriched_cases = [enrich_case_assets(case) for case in payload.get("cases", [])]
+    return jsonify(
+        {
+            "ok": True,
+            "total": payload.get("total", 0),
+            "limit": payload.get("limit", limit),
+            "offset": payload.get("offset", offset),
+            "cases": enriched_cases,
+        }
+    )
 
 
 @app.get("/api/latest-run")

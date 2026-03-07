@@ -188,6 +188,21 @@
       <div id="failureWrap"></div>
       <div id="chartsWrap" class="charts"></div>
     </section>
+
+    <section class="panel">
+      <h2>Run History Database</h2>
+      <p class="helper">
+        Persistent run/case history stored in <code>runtime/history.db</code>. Filter by study path or case id, then load any prior run.
+      </p>
+      <div class="study-row">
+        <input id="historyStudyFilter" type="text" placeholder="Filter study path (optional)">
+        <input id="historyCaseFilter" type="text" placeholder="Filter case id (optional)">
+        <button id="historyRefreshBtn">Refresh History</button>
+      </div>
+      <div id="historyMeta" class="helper"></div>
+      <div id="historyRunsWrap"></div>
+      <pre id="historyCases"></pre>
+    </section>
   </main>
 
   <script src="/web/app.js"></script>

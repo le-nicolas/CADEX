@@ -115,6 +115,7 @@ Pressure chart from run outputs:
 - Train surrogate model from historical runs
 - Predict thousands of combinations instantly, then validate top-N with real CFD
 - Export ranked CSV, charts, screenshots, and report HTML/Markdown
+- Persist all run/case metadata in `runtime/history.db` and browse old studies without rerunning
 
 ## Quick Start (5 Minutes)
 
@@ -154,6 +155,26 @@ python app.py
 - `predict`: surrogate-only prediction (no CFD solve)
 - `validate`: surrogate picks candidates, then real CFD validates top-N
 
+## Persistent History Database (New)
+
+CADEX now writes every completed run to a local SQLite database:
+
+- Database file: `runtime/history.db`
+- Stored entities: runs, case-level results, metrics, and case inputs
+- Works across future `.cfdst` studies (not tied to one project file)
+
+Use it from the web UI:
+
+- Open **Run History Database** panel
+- Filter by study path and/or case id
+- Click **Load** on any past run to view its outputs, charts, failures, and per-case assets
+
+API endpoints:
+
+- `GET /api/history/runs?limit=30&study_path=...&case_id=...`
+- `GET /api/history/runs/<run_id>`
+- `GET /api/history/cases?limit=120&study_path=...&case_id=...&success=true|false`
+
 ## API (Core)
 
 - `POST /api/run` with `mode=all|failed|changed|predict|validate`
@@ -165,6 +186,9 @@ python app.py
 - `GET /api/surrogate/status`
 - `POST /api/surrogate/predict`
 - `GET /api/surrogate/coverage`
+- `GET /api/history/runs`
+- `GET /api/history/runs/<run_id>`
+- `GET /api/history/cases`
 
 ## Config Notes
 

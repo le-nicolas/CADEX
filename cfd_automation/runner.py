@@ -4,6 +4,7 @@ import json
 import os
 import re
 import shutil
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
@@ -17,6 +18,7 @@ from .config_io import (
     save_cases,
     save_config,
 )
+from .history import HistoryStore
 from .postprocess import run_postprocess
 from .utils import ensure_dir, now_utc_stamp, read_json, write_json
 
@@ -36,6 +38,7 @@ class AutomationRunner:
         self.latest_run_path = self.runtime_dir / "latest_run.json"
         self.case_script = project_root / "scripts" / "cfd_case_runner.py"
         self.introspect_script = project_root / "scripts" / "cfd_introspect.py"
+        self.history_store = HistoryStore(self.runtime_dir / "history.db")
 
     def get_config(self) -> dict[str, Any]:
         return load_config(self.config_path)
@@ -601,6 +604,7 @@ class AutomationRunner:
         state = self._load_state()
 
         selected_cases = self._select_cases(mode=mode, cases=cases, config=cfg, state=state)
+        run_started_at = datetime.now(timezone.utc).isoformat()
         run_id = now_utc_stamp()
         run_dir = ensure_dir(self.runs_dir / run_id)
         cases_dir = ensure_dir(run_dir / "cases")
@@ -857,8 +861,12 @@ class AutomationRunner:
 
         summary = {
             "run_id": run_id,
+            "created_at": run_started_at,
             "mode": mode,
             "run_dir": str(run_dir),
+            "study_path": study_path,
+            "design_name": str(cfg.get("study", {}).get("design_name", "")),
+            "scenario_name": str(cfg.get("study", {}).get("scenario_name", "")),
             "total_cases": len(cases),
             "selected_case_count": len(selected_cases),
             "successful_cases": sum(1 for r in all_case_results if r.get("success")),
@@ -894,6 +902,14 @@ class AutomationRunner:
         write_json(run_dir / "run_summary.json", summary)
         write_json(self.latest_run_path, summary)
         self._save_state(state)
+        try:
+            self.history_store.ingest_run(summary=summary, config=cfg, cases=cases)
+        except Exception as ex:
+            self._emit(
+                progress,
+                type="run_warning",
+                message=f"Failed to store run history in SQLite: {ex}",
+            )
 
         self._emit(
             progress,

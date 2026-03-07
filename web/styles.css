@@ -241,7 +241,8 @@ textarea {
 #loopStatus,
 #surrogateStatus,
 #surrogatePredictOutput,
-#surrogateCoverage {
+#surrogateCoverage,
+#historyCases {
   min-height: 300px;
   max-height: 420px;
   overflow: auto;
@@ -264,7 +265,8 @@ textarea {
 #loopStatus,
 #surrogateStatus,
 #surrogatePredictOutput,
-#surrogateCoverage {
+#surrogateCoverage,
+#historyCases {
   min-height: 120px;
   max-height: 260px;
 }
@@ -327,6 +329,10 @@ th {
 
 #failureWrap {
   margin-top: 12px;
+}
+
+#historyRunsWrap {
+  margin-top: 10px;
 }
 
 #liveFailureWrap {

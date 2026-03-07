@@ -6,6 +6,7 @@ from .config_io import (
     save_config,
 )
 from .design_loop import GenerativeDesignLoop
+from .history import HistoryStore
 from .llm_cases import LLMCaseGenerator, LLMMeshAdvisor, LLMOptimizerNarrator
 from .runner import AutomationRunner
 from .surrogate import SurrogateEngine
@@ -13,6 +14,7 @@ from .surrogate import SurrogateEngine
 __all__ = [
     "AutomationRunner",
     "GenerativeDesignLoop",
+    "HistoryStore",
     "LLMCaseGenerator",
     "LLMOptimizerNarrator",
     "LLMMeshAdvisor",
