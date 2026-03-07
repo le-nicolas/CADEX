@@ -83,6 +83,13 @@ These protections are now active in the design loop path:
 4. Dry-run behavior
 - In dry-run mode (`CFD_AUTOMATION_DRY_RUN=1`), metric preflight is skipped by design.
 
+5. Timeout phase detection
+- CADEX parses live CFD logs for phase markers (`mesh`, `solve`, `results`) while the subprocess is running.
+- If timeout occurs, it records the last detected phase and classifies timeout failure mode accordingly:
+  - timeout in `mesh` phase -> `mesh_failure`
+  - timeout in `solve` phase -> `solver_divergence`
+  - timeout in `results` phase -> `script_failure`
+
 ### Demo Outputs
 
 CFD output screenshot (Kani Yawa):

@@ -147,3 +147,23 @@ def test_script_failure_retry_keeps_same_mesh(tmp_path: Path, monkeypatch) -> No
     payload_path = Path(failed_case["payload_path"])
     payload = json.loads(payload_path.read_text(encoding="utf-8"))
     assert payload["mesh_adjustment"] == {}
+
+
+def test_timeout_mesh_phase_maps_to_mesh_failure() -> None:
+    case_result = {
+        "driver": {
+            "last_phase": "mesh",
+        }
+    }
+    mode = AutomationRunner._classify_failure_mode(case_result, "timeout")
+    assert mode == "mesh_failure"
+
+
+def test_timeout_solve_phase_maps_to_solver_divergence() -> None:
+    case_result = {
+        "driver": {
+            "last_phase": "solve",
+        }
+    }
+    mode = AutomationRunner._classify_failure_mode(case_result, "timeout")
+    assert mode == "solver_divergence"

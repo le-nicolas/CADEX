@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import threading
 import time
 from pathlib import Path
@@ -9,6 +10,7 @@ from typing import Any, Callable
 
 
 DriverEventFn = Callable[[dict[str, Any]], None]
+LineHookFn = Callable[[str, str], None]
 
 
 def _emit(callback: DriverEventFn | None, **event: Any) -> None:
@@ -22,13 +24,17 @@ def _read_stream_lines(
     source: str,
     sink: list[str],
     callback: DriverEventFn | None,
+    line_hook: LineHookFn | None = None,
 ) -> None:
     try:
         for line in iter(stream.readline, ""):
             if line == "":
                 break
             sink.append(line)
-            _emit(callback, type="log_line", source=source, line=line.rstrip("\r\n"))
+            clean = line.rstrip("\r\n")
+            if line_hook:
+                line_hook(source, clean)
+            _emit(callback, type="log_line", source=source, line=clean)
     finally:
         try:
             stream.close()
@@ -57,6 +63,46 @@ def _discover_log_files(roots: list[Path]) -> list[Path]:
                 seen.add(key)
                 found.append(file_path)
     return found
+
+
+def _detect_phase_marker(line: str) -> str | None:
+    text = str(line or "").strip().lower()
+    if not text:
+        return None
+
+    mesh_patterns = [
+        r"\bmeshing\b",
+        r"\bmesh generation\b",
+        r"\bgenerat(?:e|ing)\s+mesh\b",
+        r"\bvolume mesh\b",
+        r"\bsurface mesh\b",
+        r"\bremesh\b",
+    ]
+    solve_patterns = [
+        r"\bsolver\b",
+        r"\bsolving\b",
+        r"\biteration(?:s)?\b",
+        r"\bresidual(?:s)?\b",
+        r"\bconverg(?:e|ence|ed)\b",
+    ]
+    results_patterns = [
+        r"\bpost[- ]?process(?:ing)?\b",
+        r"\bsummary\b",
+        r"\bexport(?:ing|ed)?\b",
+        r"\bsave(?:d)?\s+(?:image|screenshot|report)\b",
+        r"\bresult(?:s)?\b",
+    ]
+
+    for pattern in mesh_patterns:
+        if re.search(pattern, text):
+            return "mesh"
+    for pattern in solve_patterns:
+        if re.search(pattern, text):
+            return "solve"
+    for pattern in results_patterns:
+        if re.search(pattern, text):
+            return "results"
+    return None
 
 
 def run_cfd_script(
@@ -103,22 +149,62 @@ def run_cfd_script(
 
     stdout_chunks: list[str] = []
     stderr_chunks: list[str] = []
+    phase_state: dict[str, Any] = {
+        "current": "startup",
+        "last_source": "",
+        "last_line": "",
+        "history": [],
+    }
+    start = time.monotonic()
+
+    def track_phase(source: str, line: str) -> None:
+        marker = _detect_phase_marker(line)
+        if not marker:
+            return
+        if marker == phase_state["current"]:
+            phase_state["last_source"] = source
+            phase_state["last_line"] = line[:500]
+            return
+        phase_state["current"] = marker
+        phase_state["last_source"] = source
+        phase_state["last_line"] = line[:500]
+        elapsed = round(max(0.0, time.monotonic() - start), 3)
+        history = phase_state["history"]
+        history.append(
+            {
+                "phase": marker,
+                "source": source,
+                "line": line[:500],
+                "elapsed_s": elapsed,
+            }
+        )
+        if len(history) > 200:
+            del history[:-200]
+
     stdout_thread = threading.Thread(
         target=_read_stream_lines,
         args=(proc.stdout,),
-        kwargs={"source": "stdout", "sink": stdout_chunks, "callback": on_event},
+        kwargs={
+            "source": "stdout",
+            "sink": stdout_chunks,
+            "callback": on_event,
+            "line_hook": track_phase,
+        },
         daemon=True,
     )
     stderr_thread = threading.Thread(
         target=_read_stream_lines,
         args=(proc.stderr,),
-        kwargs={"source": "stderr", "sink": stderr_chunks, "callback": on_event},
+        kwargs={
+            "source": "stderr",
+            "sink": stderr_chunks,
+            "callback": on_event,
+            "line_hook": track_phase,
+        },
         daemon=True,
     )
     stdout_thread.start()
     stderr_thread.start()
-
-    start = time.monotonic()
     timed_out = False
 
     def tail_logs_once() -> None:
@@ -152,6 +238,7 @@ def run_cfd_script(
             for line in lines:
                 clean = line.rstrip("\r\n")
                 if clean:
+                    track_phase(f"log:{file_path.name}", clean)
                     _emit(
                         on_event,
                         type="log_line",
@@ -172,7 +259,12 @@ def run_cfd_script(
                     proc.kill()
                 except Exception:
                     pass
-            _emit(on_event, type="process_state", state="timeout")
+            _emit(
+                on_event,
+                type="process_state",
+                state="timeout",
+                last_phase=phase_state.get("current", "startup"),
+            )
             break
         time.sleep(max(0.15, poll_interval_seconds))
 
@@ -198,6 +290,7 @@ def run_cfd_script(
         state="finished",
         returncode=returncode,
         timed_out=timed_out,
+        last_phase=phase_state.get("current", "startup"),
     )
 
     return {
@@ -208,5 +301,9 @@ def run_cfd_script(
         "stderr": "".join(stderr_chunks),
         "log_path": str(log_path),
         "log_text": log_text,
+        "last_phase": phase_state.get("current", "startup"),
+        "phase_source": phase_state.get("last_source", ""),
+        "phase_line": phase_state.get("last_line", ""),
+        "phase_history": list(phase_state.get("history", [])),
         "command": cmd,
     }

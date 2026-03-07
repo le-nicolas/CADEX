@@ -243,6 +243,13 @@ class AutomationRunner:
         if case_result.get("error"):
             return str(case_result.get("error"))
         if run_info.get("timed_out"):
+            phase = str(run_info.get("last_phase", "")).strip().lower()
+            if phase == "mesh":
+                return "Timed out during meshing phase."
+            if phase == "solve":
+                return "Timed out during solver phase."
+            if phase == "results":
+                return "Timed out during results extraction/post-processing phase."
             return "Timed out while waiting for Autodesk CFD script execution."
         stderr = (run_info.get("stderr") or "").strip()
         if stderr:
@@ -295,6 +302,15 @@ class AutomationRunner:
             return "mesh_failure"
         if failure_type == "python_exception":
             return "script_failure"
+        if failure_type == "timeout":
+            driver = case_result.get("driver", {}) if isinstance(case_result.get("driver", {}), dict) else {}
+            last_phase = str(driver.get("last_phase", "")).strip().lower()
+            if last_phase == "mesh":
+                return "mesh_failure"
+            if last_phase == "solve":
+                return "solver_divergence"
+            if last_phase == "results":
+                return "script_failure"
 
         text = " ".join(
             [
@@ -650,6 +666,9 @@ class AutomationRunner:
                         "stderr": "",
                         "log_path": "",
                         "log_text": "",
+                        "last_phase": "startup",
+                        "phase_source": "",
+                        "phase_line": "",
                     }
                     case_result = self._dry_run_case_result(
                         case=case,
@@ -720,6 +739,9 @@ class AutomationRunner:
                     "stdout": run_info.get("stdout", ""),
                     "stderr": run_info.get("stderr", ""),
                     "log_path": run_info.get("log_path", ""),
+                    "last_phase": run_info.get("last_phase", ""),
+                    "phase_source": run_info.get("phase_source", ""),
+                    "phase_line": run_info.get("phase_line", ""),
                 }
                 case_result["payload_path"] = str(payload_path)
                 case_result["failure_type"] = self._classify_failure_type(case_result, run_info)
