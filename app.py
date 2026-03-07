@@ -162,6 +162,8 @@ class RunManager:
             "last_error": "",
             "last_summary": {},
             "recent_failures": [],
+            "current_phase": "",
+            "case_table": [],
         }
 
     def _append_log(self, line: str) -> None:
@@ -169,6 +171,35 @@ class RunManager:
         logs.append(f"[{utc_now_iso()}] {line}")
         if len(logs) > 1200:
             del logs[:-1200]
+
+    def _upsert_case_entry(self, case_id: str) -> dict[str, Any]:
+        rows = self._state.setdefault("case_table", [])
+        for row in rows:
+            if str(row.get("case_id", "")) == case_id:
+                return row
+        created = {
+            "case_id": case_id,
+            "status": "queued",
+            "attempt": 0,
+            "phase": "startup",
+            "failure_type": "",
+            "failure_mode": "",
+            "failure_reason": "",
+            "updated_at": utc_now_iso(),
+        }
+        rows.append(created)
+        return created
+
+    @staticmethod
+    def _normalize_phase(phase: str) -> str:
+        text = str(phase or "").strip().lower()
+        if not text:
+            return "startup"
+        if text == "results":
+            return "extract"
+        if text in {"mesh", "solve", "extract", "startup", "complete"}:
+            return text
+        return text
 
     def _handle_progress(self, event: dict[str, Any]) -> None:
         event_type = event.get("type", "event")
@@ -184,6 +215,8 @@ class RunManager:
                 self._state["selected_case_count"] = int(event.get("selected_cases", 0))
                 self._state["completed_case_count"] = 0
                 self._state["current_case"] = ""
+                self._state["current_phase"] = "startup"
+                self._state["case_table"] = []
                 self._append_log(
                     f"Run started. mode={self._state['mode']} selected={self._state['selected_case_count']}"
                 )
@@ -197,12 +230,26 @@ class RunManager:
                     )
             elif event_type == "case_started":
                 self._state["current_case"] = event.get("case_id", "")
+                self._state["current_phase"] = "startup"
+                row = self._upsert_case_entry(str(self._state["current_case"]))
+                row["status"] = "running"
+                row["attempt"] = int(event.get("attempt", row.get("attempt", 1) or 1))
+                row["phase"] = "startup"
+                row["updated_at"] = utc_now_iso()
                 self._append_log(
                     f"Case started ({event.get('index', '?')}/{event.get('total', '?')}): "
                     f"{self._state['current_case']}"
                 )
             elif event_type == "case_success":
                 self._state["completed_case_count"] += 1
+                case_id = str(event.get("case_id", ""))
+                row = self._upsert_case_entry(case_id)
+                row["status"] = "success"
+                row["attempt"] = int(event.get("attempt", row.get("attempt", 1) or 1))
+                row["phase"] = "complete"
+                row["updated_at"] = utc_now_iso()
+                if self._state.get("current_case") == case_id:
+                    self._state["current_phase"] = "complete"
                 self._append_log(
                     f"Case succeeded: {event.get('case_id', '')} (attempt {event.get('attempt', 1)})"
                 )
@@ -210,6 +257,14 @@ class RunManager:
                 failure_type = str(event.get("failure_type", "")).strip()
                 failure_mode = str(event.get("failure_mode", "")).strip()
                 mesh_adjustment = event.get("mesh_adjustment", {})
+                case_id = str(event.get("case_id", ""))
+                row = self._upsert_case_entry(case_id)
+                row["status"] = "retrying"
+                row["attempt"] = int(event.get("attempt", row.get("attempt", 1) or 1))
+                row["failure_type"] = failure_type
+                row["failure_mode"] = failure_mode
+                row["failure_reason"] = str(event.get("reason", "")).strip()
+                row["updated_at"] = utc_now_iso()
                 self._append_log(
                     f"Case retry: {event.get('case_id', '')} "
                     f"(attempt {event.get('attempt', 1)}/{event.get('max_attempts', 1)}) "
@@ -229,10 +284,26 @@ class RunManager:
                 failures.append(fail)
                 if len(failures) > 50:
                     del failures[:-50]
+                row = self._upsert_case_entry(str(fail["case_id"]))
+                row["status"] = "failed"
+                row["attempt"] = int(fail.get("attempt", row.get("attempt", 1) or 1))
+                row["failure_type"] = str(fail.get("failure_type", "")).strip()
+                row["failure_mode"] = str(fail.get("failure_mode", "")).strip()
+                row["failure_reason"] = str(fail.get("reason", "")).strip()
+                row["updated_at"] = utc_now_iso()
                 self._append_log(
                     f"Case failed: {fail['case_id']} (attempt {fail['attempt']}), "
                     f"type={fail['failure_type'] or 'unknown'}, reason={fail['reason']}"
                 )
+            elif event_type == "case_phase":
+                case_id = str(event.get("case_id", "")).strip()
+                phase = self._normalize_phase(str(event.get("phase", "")))
+                row = self._upsert_case_entry(case_id)
+                row["phase"] = phase
+                row["attempt"] = int(event.get("attempt", row.get("attempt", 1) or 1))
+                row["updated_at"] = utc_now_iso()
+                if self._state.get("current_case") == case_id:
+                    self._state["current_phase"] = phase
             elif event_type == "case_log":
                 source = event.get("source", "driver")
                 case_id = event.get("case_id", "")
@@ -240,7 +311,24 @@ class RunManager:
                 line = event.get("line", "")
                 self._append_log(f"[{case_id}][attempt {attempt}][{source}] {line}")
             elif event_type == "run_finished":
-                self._state["last_summary"] = enrich_summary(event.get("summary", {}))
+                summary = enrich_summary(event.get("summary", {}))
+                self._state["last_summary"] = summary
+                for case_item in summary.get("case_results", []):
+                    if not isinstance(case_item, dict):
+                        continue
+                    case_id = str(case_item.get("case_id", "")).strip()
+                    if not case_id:
+                        continue
+                    row = self._upsert_case_entry(case_id)
+                    row["status"] = "success" if case_item.get("success") else "failed"
+                    row["attempt"] = int(case_item.get("attempts", case_item.get("attempt", row.get("attempt", 1) or 1)))
+                    row["phase"] = "complete" if case_item.get("success") else row.get("phase", "startup")
+                    row["failure_type"] = str(case_item.get("failure_type", "")).strip()
+                    row["failure_mode"] = str(case_item.get("failure_mode", "")).strip()
+                    row["failure_reason"] = str(
+                        case_item.get("failure_reason", case_item.get("error", ""))
+                    ).strip()
+                    row["updated_at"] = utc_now_iso()
                 self._append_log("Run finished.")
             elif event_type == "run_warning":
                 self._append_log(f"Run warning: {event.get('message', '')}")
@@ -263,6 +351,8 @@ class RunManager:
             self._state["logs"] = []
             self._state["last_summary"] = {}
             self._state["recent_failures"] = []
+            self._state["current_phase"] = "startup"
+            self._state["case_table"] = []
 
         def worker() -> None:
             try:
@@ -312,6 +402,8 @@ class DesignLoopManager:
             "stop_requested": False,
             "optimizer_mode": dep.get("mode", "random_fallback"),
             "optimizer_warning": dep.get("warning", ""),
+            "batch_timeline": [],
+            "preflight": {},
         }
 
     def _append_log(self, line: str) -> None:
@@ -331,6 +423,8 @@ class DesignLoopManager:
                 self._state["max_batches"] = int(event.get("max_batches", 0))
                 self._state["optimizer_mode"] = event.get("optimizer_mode", self._state.get("optimizer_mode", ""))
                 self._state["optimizer_warning"] = event.get("optimizer_warning", "")
+                self._state["batch_timeline"] = []
+                self._state["preflight"] = {}
                 self._append_log(
                     "Design loop started. "
                     f"objective={event.get('objective_alias')} goal={event.get('objective_goal')} "
@@ -349,6 +443,34 @@ class DesignLoopManager:
                 self._state["completed_batches"] = max(self._state["completed_batches"], batch_index)
                 best_case = event.get("best_case", {}) if isinstance(event.get("best_case", {}), dict) else {}
                 narration = event.get("narration", {}) if isinstance(event.get("narration", {}), dict) else {}
+                batch_summary = (
+                    event.get("batch_summary", {})
+                    if isinstance(event.get("batch_summary", {}), dict)
+                    else {}
+                )
+                batch_cases = (
+                    batch_summary.get("cases", [])
+                    if isinstance(batch_summary.get("cases", []), list)
+                    else []
+                )
+                feasible_count = sum(
+                    1
+                    for item in batch_cases
+                    if isinstance(item, dict) and bool(item.get("constraints_pass"))
+                )
+                timeline_item = {
+                    "batch_index": batch_index,
+                    "run_id": str(event.get("run_id", "")),
+                    "best_case": best_case,
+                    "narration": narration,
+                    "case_count": len(batch_cases),
+                    "feasible_count": feasible_count,
+                    "cases": batch_cases,
+                }
+                timeline = self._state.setdefault("batch_timeline", [])
+                timeline.append(timeline_item)
+                if len(timeline) > 200:
+                    del timeline[:-200]
                 self._append_log(
                     f"Batch {batch_index} finished. best_case={best_case.get('case_id', '-')}, "
                     f"score={best_case.get('score', '-')}, objective={best_case.get('objective_value', '-')}"
@@ -356,12 +478,26 @@ class DesignLoopManager:
                 if narration.get("text"):
                     self._append_log(f"LLM insight: {str(narration.get('text'))[:900]}")
             elif event_type == "loop_preflight_ok":
+                self._state["preflight"] = {
+                    "ok": True,
+                    "checked_metrics": int(event.get("checked_metrics", 0)),
+                    "available_metric_pairs": int(event.get("available_metric_pairs", 0)),
+                    "skipped": False,
+                    "reason": "",
+                }
                 self._append_log(
                     "Metric contract preflight passed. "
                     f"checked_metrics={event.get('checked_metrics', 0)} "
                     f"available_pairs={event.get('available_metric_pairs', 0)}"
                 )
             elif event_type == "loop_preflight_skipped":
+                self._state["preflight"] = {
+                    "ok": True,
+                    "checked_metrics": 0,
+                    "available_metric_pairs": 0,
+                    "skipped": True,
+                    "reason": str(event.get("reason", "unknown")),
+                }
                 self._append_log(
                     "Metric contract preflight skipped. "
                     f"reason={event.get('reason', 'unknown')}"
@@ -394,6 +530,15 @@ class DesignLoopManager:
                 self._state["status"] = summary.get("status", "finished")
                 self._state["optimizer_mode"] = summary.get("optimizer_mode", self._state.get("optimizer_mode", ""))
                 self._state["optimizer_warning"] = summary.get("optimizer_warning", self._state.get("optimizer_warning", ""))
+                history = summary.get("history", []) if isinstance(summary.get("history", []), list) else []
+                self._state["batch_timeline"] = history
+                preflight = (
+                    summary.get("metric_contract_preflight", {})
+                    if isinstance(summary.get("metric_contract_preflight", {}), dict)
+                    else {}
+                )
+                if preflight:
+                    self._state["preflight"] = preflight
                 best_case = summary.get("best_case", {}) if isinstance(summary.get("best_case", {}), dict) else {}
                 self._append_log(
                     f"Design loop finished with status={self._state['status']}. "
@@ -419,6 +564,8 @@ class DesignLoopManager:
             self._state["stop_requested"] = False
             self._state["optimizer_mode"] = dep.get("mode", "random_fallback")
             self._state["optimizer_warning"] = dep.get("warning", "")
+            self._state["batch_timeline"] = []
+            self._state["preflight"] = {}
             if self._state["optimizer_warning"]:
                 self._append_log(f"WARNING: {self._state['optimizer_warning']}")
 

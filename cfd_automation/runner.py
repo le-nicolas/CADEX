@@ -704,7 +704,28 @@ class AutomationRunner:
                                 source=str(event.get("source", "driver")),
                                 line=line[:600],
                             )
+                        elif event.get("type") == "phase_changed":
+                            self._emit(
+                                progress,
+                                type="case_phase",
+                                case_id=case_id,
+                                attempt=attempt,
+                                phase=str(event.get("phase", "")).strip(),
+                                source=str(event.get("source", "driver")),
+                                line=str(event.get("line", ""))[:600],
+                            )
                         elif event.get("type") == "process_state":
+                            last_phase = str(event.get("last_phase", "")).strip()
+                            if last_phase:
+                                self._emit(
+                                    progress,
+                                    type="case_phase",
+                                    case_id=case_id,
+                                    attempt=attempt,
+                                    phase=last_phase,
+                                    source="driver_state",
+                                    line=str(event.get("state", "")),
+                                )
                             self._emit(
                                 progress,
                                 type="case_log",

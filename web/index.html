@@ -65,6 +65,7 @@
       <article class="panel">
         <h2>Cases (CSV)</h2>
         <textarea id="casesText" spellcheck="false"></textarea>
+        <div id="casesMatrixWrap"></div>
       </article>
     </section>
 
@@ -127,6 +128,10 @@
         <button id="loopStartBtn" class="accent">Start Design Loop</button>
         <button id="loopStopBtn">Stop Design Loop</button>
       </div>
+      <div id="loopPreflight" class="helper"></div>
+      <canvas id="loopConvergenceChart" height="180"></canvas>
+      <div id="loopTimelineWrap"></div>
+      <div id="loopBatchTableWrap"></div>
       <pre id="loopStatus"></pre>
     </section>
 
@@ -160,6 +165,8 @@
         <button id="surrogatePredictBtn" class="accent">Predict</button>
         <button id="surrogateValidateBtn">Validate Top N</button>
       </div>
+      <div id="surrogateWorkflow" class="helper"></div>
+      <div id="surrogateFeatureBars"></div>
       <pre id="surrogateStatus"></pre>
       <pre id="surrogatePredictOutput"></pre>
       <pre id="surrogateCoverage"></pre>
@@ -172,6 +179,8 @@
           <span id="caseCounter">0 / 0</span>
           <span id="currentCase">Current: -</span>
         </div>
+        <div id="livePhaseWrap"></div>
+        <div id="liveCaseTableWrap"></div>
         <div id="liveFailureWrap"></div>
         <pre id="logs"></pre>
       </article>
@@ -183,8 +192,10 @@
 
     <section class="panel">
       <h2>Latest Run Outputs</h2>
+      <div id="bestDesignCard" class="helper"></div>
       <div id="resultsLinks" class="links"></div>
       <div id="resultsTableWrap"></div>
+      <div id="failureBreakdownWrap"></div>
       <div id="failureWrap"></div>
       <div id="chartsWrap" class="charts"></div>
     </section>
@@ -200,6 +211,7 @@
         <button id="historyRefreshBtn">Refresh History</button>
       </div>
       <div id="historyMeta" class="helper"></div>
+      <div id="historyQuickPicks"></div>
       <div id="historyRunsWrap"></div>
       <pre id="historyCases"></pre>
     </section>

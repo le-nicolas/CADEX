@@ -600,6 +600,7 @@ class GenerativeDesignLoop:
                     run_id=run_summary.get("run_id", ""),
                     best_case=batch_summary.get("best_case_in_batch"),
                     narration=narration,
+                    batch_summary=batch_summary,
                 )
 
             final_summary = {

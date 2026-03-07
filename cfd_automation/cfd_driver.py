@@ -180,6 +180,14 @@ def run_cfd_script(
         )
         if len(history) > 200:
             del history[:-200]
+        _emit(
+            on_event,
+            type="phase_changed",
+            phase=marker,
+            source=source,
+            line=line[:500],
+            elapsed_s=elapsed,
+        )
 
     stdout_thread = threading.Thread(
         target=_read_stream_lines,

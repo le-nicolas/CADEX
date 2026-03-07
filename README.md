@@ -155,6 +155,15 @@ python app.py
 - `predict`: surrogate-only prediction (no CFD solve)
 - `validate`: surrogate picks candidates, then real CFD validates top-N
 
+## Dashboard (Live Sections)
+
+- **Live Runs**: active case progress with explicit `mesh -> solve -> extract` phase pipeline, live logs, color-coded failure tags (`null_metric` included), and live case table.
+- **Design Loop**: batch timeline (`exploration -> exploitation`), convergence chart with batch dividers, preflight contract status, and batch case table.
+- **Cases**: LLM Case Builder + rendered case matrix table (with turbulence model tags).
+- **Results**: ranked table with score bars, best-design card (with latest LLM explanation block when available), and failure breakdown by type.
+- **Surrogate**: model status, per-feature coverage bars, and train/predict/validate workflow state.
+- **History DB**: clickable dated run list, including quick picks for latest run and `Kani Yawa` runs.
+
 ## Persistent History Database (New)
 
 CADEX now writes every completed run to a local SQLite database:
