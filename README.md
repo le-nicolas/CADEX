@@ -63,6 +63,26 @@ Design Loop now reports optimizer mode directly in the dashboard:
 
 So fallback is no longer silent.
 
+### Reliability Guardrails (Latest)
+
+These protections are now active in the design loop path:
+
+1. Metric contract preflight before batch 1
+- At loop start, CADEX runs a fresh introspection + Summary catalog check against the currently configured study.
+- It diffs configured metrics (`section` + `quantity`) against what Autodesk CFD Summary actually exposes.
+- If anything is missing, loop start fails loudly before wasting a batch.
+
+2. Stale context protection
+- Preflight verifies the introspected context matches requested study/design/scenario.
+- If the context does not match, loop start is blocked with an explicit stale-context error.
+
+3. Null objective guard (`null_metric`)
+- If a case succeeds but objective metric is null/NaN, CADEX marks it as `failure_type: null_metric`.
+- That case is excluded from optimizer feedback (`tell`) so bad objective rows do not contaminate loop learning.
+
+4. Dry-run behavior
+- In dry-run mode (`CFD_AUTOMATION_DRY_RUN=1`), metric preflight is skipped by design.
+
 ### Demo Outputs
 
 CFD output screenshot (Kani Yawa):
@@ -83,6 +103,8 @@ Pressure chart from run outputs:
 - Generate cases from natural language (Ollama or Groq)
 - Run closed-loop Bayesian design optimization
 - See live optimizer mode/warning in Design Loop status
+- Get fail-fast metric contract checks before loop batches start
+- Prevent null objective values from entering optimizer feedback (`null_metric` guard)
 - Train surrogate model from historical runs
 - Predict thousands of combinations instantly, then validate top-N with real CFD
 - Export ranked CSV, charts, screenshots, and report HTML/Markdown
