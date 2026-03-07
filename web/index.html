@@ -1,222 +1,1553 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Autodesk CFD Automation Console</title>
-  <link rel="stylesheet" href="/web/styles.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CADEX — CFD Automated Design EXploration</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,400&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,300&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f7f6f3;
+    --surface: #ffffff;
+    --surface-2: #f0efe9;
+    --border: #e2e0d8;
+    --border-strong: #c8c5ba;
+    --text-primary: #1a1917;
+    --text-secondary: #6b6860;
+    --text-muted: #a09e98;
+    --accent: #1a6b4a;
+    --accent-light: #e8f4ee;
+    --accent-mid: #2d9166;
+    --warn: #b45309;
+    --warn-light: #fef3c7;
+    --error: #b91c1c;
+    --error-light: #fee2e2;
+    --info: #1d4ed8;
+    --info-light: #eff6ff;
+    --running: #7c3aed;
+    --running-light: #f5f3ff;
+    --shadow-sm: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+    --shadow: 0 4px 12px rgba(0,0,0,0.07), 0 2px 4px rgba(0,0,0,0.04);
+    --radius: 8px;
+    --radius-sm: 5px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text-primary);
+    font-size: 14px;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+
+  /* LAYOUT */
+  .app { display: flex; height: 100vh; overflow: hidden; }
+
+  /* SIDEBAR */
+  .sidebar {
+    width: 220px;
+    min-width: 220px;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    z-index: 10;
+  }
+
+  .sidebar-logo {
+    padding: 20px 20px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .logo-wordmark {
+    font-family: 'DM Mono', monospace;
+    font-size: 17px;
+    font-weight: 500;
+    letter-spacing: -0.02em;
+    color: var(--text-primary);
+  }
+
+  .logo-sub {
+    font-size: 10px;
+    color: var(--text-muted);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-top: 2px;
+    font-weight: 400;
+  }
+
+  .sidebar-section {
+    padding: 16px 12px 8px;
+  }
+
+  .sidebar-section-label {
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    padding: 0 8px;
+    margin-bottom: 4px;
+  }
+
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 7px 8px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    color: var(--text-secondary);
+    font-size: 13.5px;
+    font-weight: 400;
+    transition: all 0.12s;
+    user-select: none;
+  }
+
+  .nav-item:hover { background: var(--surface-2); color: var(--text-primary); }
+
+  .nav-item.active {
+    background: var(--accent-light);
+    color: var(--accent);
+    font-weight: 500;
+  }
+
+  .nav-icon {
+    width: 16px;
+    height: 16px;
+    opacity: 0.7;
+    flex-shrink: 0;
+  }
+
+  .nav-item.active .nav-icon { opacity: 1; }
+
+  .nav-badge {
+    margin-left: auto;
+    background: var(--running);
+    color: white;
+    font-size: 10px;
+    font-family: 'DM Mono', monospace;
+    padding: 1px 5px;
+    border-radius: 10px;
+    font-weight: 500;
+  }
+
+  .sidebar-bottom {
+    margin-top: auto;
+    padding: 12px;
+    border-top: 1px solid var(--border);
+  }
+
+  .study-pill {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 8px 10px;
+    cursor: pointer;
+  }
+
+  .study-pill-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; }
+  .study-pill-name { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--text-primary); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .study-pill-status { display: flex; align-items: center; gap: 5px; margin-top: 4px; }
+  .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-mid); }
+  .status-dot.pulsing { animation: pulse 1.8s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+  .study-pill-status span { font-size: 11px; color: var(--text-secondary); }
+
+  /* MAIN */
+  .main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* TOPBAR */
+  .topbar {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    height: 52px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+
+  .topbar-title { font-size: 15px; font-weight: 500; }
+  .topbar-subtitle { font-size: 12px; color: var(--text-muted); margin-top: 1px; }
+
+  .topbar-actions { display: flex; align-items: center; gap: 8px; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 12px; border-radius: var(--radius-sm);
+    font-size: 13px; font-weight: 500; cursor: pointer;
+    border: 1px solid transparent; transition: all 0.12s;
+    font-family: 'DM Sans', sans-serif;
+  }
+
+  .btn-primary { background: var(--accent); color: white; border-color: var(--accent); }
+  .btn-primary:hover { background: var(--accent-mid); }
+  .btn-secondary { background: var(--surface); color: var(--text-primary); border-color: var(--border-strong); }
+  .btn-secondary:hover { background: var(--surface-2); }
+  .btn-ghost { background: transparent; color: var(--text-secondary); border-color: transparent; }
+  .btn-ghost:hover { background: var(--surface-2); color: var(--text-primary); }
+  .btn-danger { background: var(--error-light); color: var(--error); border-color: #fca5a5; }
+
+  /* CONTENT */
+  .content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  /* CARDS */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .card-header {
+    padding: 14px 18px 12px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .card-title { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+  .card-subtitle { font-size: 12px; color: var(--text-muted); margin-top: 1px; }
+  .card-body { padding: 16px 18px; }
+
+  /* GRID */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+
+  /* STAT CARDS */
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+  }
+
+  .stat-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 500; }
+  .stat-value { font-family: 'DM Mono', monospace; font-size: 26px; font-weight: 400; color: var(--text-primary); margin-top: 4px; line-height: 1; }
+  .stat-sub { font-size: 12px; color: var(--text-secondary); margin-top: 5px; }
+  .stat-delta { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; padding: 1px 5px; border-radius: 10px; margin-top: 4px; }
+  .delta-up { background: var(--accent-light); color: var(--accent); }
+  .delta-down { background: var(--error-light); color: var(--error); }
+
+  /* LIVE LOG */
+  .log-container {
+    background: #fafaf8;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    height: 220px;
+    overflow-y: auto;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .log-line { display: flex; gap: 10px; line-height: 1.6; }
+  .log-time { color: var(--text-muted); flex-shrink: 0; }
+  .log-msg { color: var(--text-primary); }
+  .log-msg.success { color: var(--accent); }
+  .log-msg.warn { color: var(--warn); }
+  .log-msg.error { color: var(--error); }
+  .log-msg.info { color: var(--info); }
+  .log-msg.dim { color: var(--text-muted); }
+
+  /* PROGRESS */
+  .progress-bar-wrap {
+    background: var(--surface-2);
+    border-radius: 100px;
+    height: 6px;
+    overflow: hidden;
+  }
+
+  .progress-bar-fill {
+    height: 100%;
+    border-radius: 100px;
+    background: var(--accent);
+    transition: width 0.4s ease;
+  }
+
+  .progress-bar-fill.running {
+    background: linear-gradient(90deg, var(--accent) 0%, var(--accent-mid) 100%);
+    animation: shimmer 2s infinite;
+    background-size: 200% 100%;
+  }
+
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+
+  /* CASE TABLE */
+  .case-table { width: 100%; border-collapse: collapse; }
+  .case-table th {
+    font-size: 11px; font-weight: 500; text-transform: uppercase;
+    letter-spacing: 0.07em; color: var(--text-muted);
+    padding: 8px 12px; text-align: left;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface-2);
+  }
+  .case-table th:first-child { border-radius: var(--radius-sm) 0 0 0; }
+  .case-table th:last-child { border-radius: 0 var(--radius-sm) 0 0; }
+
+  .case-table td {
+    padding: 9px 12px; border-bottom: 1px solid var(--border);
+    font-size: 13px; vertical-align: middle;
+  }
+
+  .case-table tr:last-child td { border-bottom: none; }
+  .case-table tr:hover td { background: var(--surface-2); }
+
+  .case-id { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--text-secondary); }
+  .case-metric { font-family: 'DM Mono', monospace; font-size: 13px; }
+
+  /* STATUS BADGES */
+  .badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 7px; border-radius: 100px;
+    font-size: 11px; font-weight: 500;
+  }
+
+  .badge-running { background: var(--running-light); color: var(--running); }
+  .badge-pass { background: var(--accent-light); color: var(--accent); }
+  .badge-fail { background: var(--error-light); color: var(--error); }
+  .badge-warn { background: var(--warn-light); color: var(--warn); }
+  .badge-pending { background: var(--surface-2); color: var(--text-muted); }
+
+  .badge-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+  .badge-dot.anim { animation: pulse 1.4s infinite; }
+
+  /* OPTIMIZER CHART */
+  .opt-chart-wrap { position: relative; height: 160px; }
+  .opt-chart-wrap canvas { width: 100% !important; }
+
+  /* DESIGN LOOP PANEL */
+  .loop-timeline { display: flex; flex-direction: column; gap: 0; }
+
+  .loop-batch {
+    display: flex; gap: 14px; padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+    position: relative;
+  }
+  .loop-batch:last-child { border-bottom: none; }
+
+  .loop-batch-num {
+    width: 26px; height: 26px; border-radius: 50%;
+    background: var(--surface-2); border: 1.5px solid var(--border-strong);
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'DM Mono', monospace; font-size: 11px; font-weight: 500;
+    color: var(--text-secondary); flex-shrink: 0; margin-top: 1px;
+  }
+
+  .loop-batch-num.active {
+    background: var(--accent-light); border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .loop-batch-num.done {
+    background: var(--accent); border-color: var(--accent);
+    color: white;
+  }
+
+  .loop-batch-content { flex: 1; }
+  .loop-batch-title { font-size: 13px; font-weight: 500; }
+  .loop-batch-detail { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+  .loop-batch-bar { margin-top: 6px; }
+
+  /* METRIC SPARKLINE */
+  .sparkline { display: inline-flex; align-items: flex-end; gap: 2px; height: 24px; }
+  .spark-bar { width: 4px; border-radius: 2px 2px 0 0; background: var(--accent); opacity: 0.7; transition: height 0.3s; }
+
+  /* CONFIG SECTION */
+  .config-grid { display: grid; grid-template-columns: 200px 1fr; gap: 0; }
+  .config-sidebar { border-right: 1px solid var(--border); padding: 12px 0; }
+  .config-nav-item { padding: 7px 16px; font-size: 13px; cursor: pointer; color: var(--text-secondary); }
+  .config-nav-item:hover { color: var(--text-primary); background: var(--surface-2); }
+  .config-nav-item.active { color: var(--accent); font-weight: 500; background: var(--accent-light); }
+  .config-content { padding: 20px 24px; }
+
+  .form-group { margin-bottom: 16px; }
+  .form-label { font-size: 12px; font-weight: 500; color: var(--text-secondary); margin-bottom: 5px; display: block; }
+  .form-input {
+    width: 100%; padding: 7px 10px;
+    border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+    font-family: 'DM Mono', monospace; font-size: 13px; color: var(--text-primary);
+    background: var(--surface); outline: none; transition: border-color 0.12s;
+  }
+  .form-input:focus { border-color: var(--accent); }
+  .form-input.mono { font-family: 'DM Mono', monospace; }
+
+  .form-hint { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+
+  .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .toggle-row:last-child { border-bottom: none; }
+  .toggle-label { font-size: 13px; }
+  .toggle-sub { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+
+  .toggle {
+    width: 34px; height: 18px; border-radius: 100px;
+    background: var(--border-strong); position: relative; cursor: pointer;
+    transition: background 0.2s;
+  }
+  .toggle.on { background: var(--accent); }
+  .toggle::after {
+    content: ''; position: absolute; top: 2px; left: 2px;
+    width: 14px; height: 14px; border-radius: 50%; background: white;
+    transition: transform 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  }
+  .toggle.on::after { transform: translateX(16px); }
+
+  /* RESULTS TAB */
+  .results-grid { display: grid; grid-template-columns: 1fr 320px; gap: 16px; }
+
+  .rank-table { width: 100%; border-collapse: collapse; }
+  .rank-table th {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em;
+    color: var(--text-muted); font-weight: 500; padding: 8px 10px;
+    text-align: left; border-bottom: 1px solid var(--border);
+    background: var(--surface-2);
+  }
+  .rank-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .rank-table tr:last-child td { border-bottom: none; }
+  .rank-table tr:hover td { background: #fafaf8; }
+
+  .rank-num { font-family: 'DM Mono', monospace; color: var(--text-muted); font-size: 12px; }
+  .rank-1 .rank-num { color: var(--accent); font-weight: 600; }
+
+  .score-bar-wrap { display: flex; align-items: center; gap: 8px; }
+  .score-bar { height: 4px; border-radius: 100px; background: var(--accent); }
+
+  /* PREFLIGHT */
+  .preflight-list { display: flex; flex-direction: column; gap: 6px; }
+  .preflight-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 10px; border-radius: var(--radius-sm);
+    background: var(--surface-2); border: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .preflight-icon { width: 16px; height: 16px; flex-shrink: 0; }
+  .preflight-pass { color: var(--accent); }
+  .preflight-fail { color: var(--error); }
+  .preflight-warn { color: var(--warn); }
+
+  /* SECTION LABELS */
+  .section-label {
+    font-size: 11px; font-weight: 500; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--text-muted); margin-bottom: 10px;
+  }
+
+  /* DIVIDER */
+  .divider { height: 1px; background: var(--border); margin: 4px 0; }
+
+  /* TABS */
+  .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
+  .tab {
+    padding: 10px 16px; font-size: 13px; font-weight: 500;
+    color: var(--text-secondary); cursor: pointer; border-bottom: 2px solid transparent;
+    margin-bottom: -1px; transition: all 0.12s;
+  }
+  .tab:hover { color: var(--text-primary); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  /* ALERTS */
+  .alert {
+    display: flex; gap: 10px; padding: 10px 14px;
+    border-radius: var(--radius-sm); font-size: 13px; border: 1px solid;
+  }
+  .alert-warn { background: var(--warn-light); border-color: #fcd34d; color: var(--warn); }
+  .alert-info { background: var(--info-light); border-color: #93c5fd; color: var(--info); }
+  .alert-success { background: var(--accent-light); border-color: #6ee7b7; color: var(--accent); }
+
+  /* SCROLLBAR */
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 100px; }
+
+  /* ACTIVE PAGE DISPLAY */
+  .page { display: none; }
+  .page.active { display: contents; }
+
+  /* INLINE MONO */
+  .mono { font-family: 'DM Mono', monospace; }
+
+  /* ANIMATE IN */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .animate-in { animation: fadeUp 0.3s ease forwards; }
+
+  .tag {
+    display: inline-block; padding: 1px 6px; border-radius: 4px;
+    font-size: 11px; font-family: 'DM Mono', monospace;
+    background: var(--surface-2); border: 1px solid var(--border);
+    color: var(--text-secondary);
+  }
+
+  .history-table { width: 100%; border-collapse: collapse; }
+  .history-table th {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em;
+    color: var(--text-muted); font-weight: 500; padding: 8px 10px;
+    text-align: left; border-bottom: 1px solid var(--border);
+    background: var(--surface-2);
+  }
+  .history-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); font-size: 12px; }
+  .history-table tr:last-child td { border-bottom: none; }
+  .history-table tr.clickable { cursor: pointer; }
+  .history-table tr.clickable:hover td { background: #fafaf8; }
+  .history-table tr.selected td { background: var(--accent-light); }
+
+  .quick-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+  .quick-chip {
+    padding: 4px 8px; border-radius: 999px; border: 1px solid var(--border-strong);
+    background: var(--surface-2); font-size: 11px; cursor: pointer;
+  }
+  .quick-chip:hover { border-color: var(--accent); color: var(--accent); }
+
+  .summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .summary-item { padding: 8px 10px; border-radius: var(--radius-sm); background: var(--surface-2); border: 1px solid var(--border); }
+  .summary-key { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); }
+  .summary-val { font-family: 'DM Mono', monospace; font-size: 12px; margin-top: 2px; color: var(--text-primary); word-break: break-all; }
+</style>
 </head>
 <body>
-  <div class="bg-orbit orbit-a"></div>
-  <div class="bg-orbit orbit-b"></div>
-  <main class="shell">
-    <header class="topbar">
-      <div>
-        <h1>Autodesk CFD Automation Console</h1>
-        <p>Configurable run orchestration, retries, ranking, charts, screenshots, and report generation.</p>
-      </div>
-      <div class="badge-row">
-        <span id="runState" class="pill idle">Idle</span>
-        <span id="runMode" class="pill secondary">Mode: -</span>
-        <input id="apiKeyInput" type="password" placeholder="X-API-Key (optional)">
-      </div>
-    </header>
 
-    <section class="actions">
-      <button id="reloadBtn">Reload</button>
-      <button id="saveConfigBtn">Save Config</button>
-      <button id="saveCasesBtn">Save Cases</button>
-      <button id="introspectBtn">Introspect Study</button>
-      <button id="runAllBtn" class="accent">Run All</button>
-      <button id="runFailedBtn">Rerun Failed</button>
-      <button id="runChangedBtn">Rerun Changed</button>
-    </section>
+<div class="app">
 
-    <section class="panel">
-      <h2>Study Path</h2>
-      <p class="helper">
-        Set the `.cfdst` file used by runs and introspection. Use Discover to find studies on this machine.
-      </p>
-      <div class="study-row">
-        <input id="studyPathInput" type="text" placeholder="C:/path/to/your/model.cfdst">
-        <button id="discoverStudiesBtn">Discover Studies</button>
-        <button id="applyStudyPathBtn">Apply Path To Config</button>
-      </div>
-      <div class="study-row">
-        <select id="studyCandidates" size="5"></select>
-        <button id="useSelectedStudyBtn">Use Selected Study</button>
-      </div>
-    </section>
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-wordmark">CADEX</div>
+      <div class="logo-sub">CFD Design EXploration</div>
+    </div>
 
-    <section id="solveBanner" class="banner hidden">
-      <strong>Solve is disabled.</strong>
-      Current runs use existing/cached results unless `solve.enabled` is set to `true`.
-    </section>
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">Monitor</div>
+      <div class="nav-item active" onclick="switchPage('monitor', this)">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+          <rect x="1" y="3" width="14" height="10" rx="1.5"/><path d="M5 13v2M11 13v2M3 15h10"/>
+        </svg>
+        Live Runs
+        <span class="nav-badge" id="navRunningBadge">0</span>
+      </div>
+      <div class="nav-item" onclick="switchPage('loop', this)">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M2 8a6 6 0 1 1 6 6"/><path d="M2 8l2-2M2 8l2 2"/>
+        </svg>
+        Design Loop
+      </div>
+    </div>
 
-    <section id="authBanner" class="banner neutral hidden">
-      API key protection is enabled on this server. Set `X-API-Key` in the field at the top-right.
-    </section>
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">Configure</div>
+      <div class="nav-item" onclick="switchPage('cases', this)">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+          <rect x="2" y="2" width="12" height="12" rx="1.5"/>
+          <path d="M5 5h6M5 8h6M5 11h4"/>
+        </svg>
+        Cases
+      </div>
+      <div class="nav-item" onclick="switchPage('config', this)">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="8" cy="8" r="2"/><path d="M8 2v1.5M8 12.5V14M2 8h1.5M12.5 8H14M3.5 3.5l1 1M11.5 11.5l1 1M3.5 12.5l1-1M11.5 4.5l1-1"/>
+        </svg>
+        Study Config
+      </div>
+    </div>
 
-    <section class="grid">
-      <article class="panel">
-        <h2>Config (JSON)</h2>
-        <textarea id="configText" spellcheck="false"></textarea>
-      </article>
-      <article class="panel">
-        <h2>Cases (CSV)</h2>
-        <textarea id="casesText" spellcheck="false"></textarea>
-        <div id="casesMatrixWrap"></div>
-      </article>
-    </section>
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">Analyze</div>
+      <div class="nav-item" onclick="switchPage('results', this)">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M2 12l4-4 3 3 5-6"/><circle cx="14" cy="5" r="1.5"/>
+        </svg>
+        Results
+      </div>
+      <div class="nav-item" onclick="switchPage('surrogate', this)">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="4" cy="12" r="1.5"/><circle cx="8" cy="6" r="1.5"/><circle cx="12" cy="9" r="1.5"/>
+          <path d="M5.2 11l1.6-3.8M9 7.5l2 1"/>
+        </svg>
+        Surrogate
+      </div>
+      <div class="nav-item" onclick="switchPage('history', this)">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M8 2v6l3 2"/><circle cx="8" cy="8" r="6"/>
+        </svg>
+        History
+      </div>
+    </div>
 
-    <section class="panel">
-      <h2>LLM Case Builder</h2>
-      <p class="helper">
-        Describe the DOE in plain language (ranges, steps, model variants). Generate preview or apply directly to Cases CSV.
-      </p>
-      <p class="helper">
-        Note: turbulence-model sweeps only affect solves when matching turbulence parameter mappings are defined in Config.
-      </p>
-      <textarea id="llmPrompt" class="llm-prompt" spellcheck="false" placeholder="Example: test inlet velocities from 1 to 5 m/s in 1 m/s steps with two turbulence models (if mapped) k-epsilon and k-omega. Keep ambient_temp_c at 25 and total_heat_w at 90."></textarea>
-      <div class="study-row">
-        <input id="llmMaxRows" type="number" min="1" max="1000" placeholder="Max rows (optional)">
-      </div>
-      <div class="actions">
-        <button id="llmPreviewBtn">Generate CSV Preview</button>
-        <button id="llmApplyBtn" class="accent">Generate + Apply to Cases</button>
-      </div>
-      <pre id="llmResult"></pre>
-    </section>
-
-    <section class="panel">
-      <h2>Mesh Intelligence (v2.1)</h2>
-      <p class="helper">
-        Ask for mesh guidance from physics and case ranges, then optionally apply the recommendation to `mesh.default_params` and `mesh.quality_gate`.
-      </p>
-      <textarea id="meshPrompt" class="llm-prompt" spellcheck="false" placeholder="Example: external turbulent airflow around a small body at 1-5 m/s, target robust mesh with practical runtime."></textarea>
-      <div class="actions">
-        <button id="meshSuggestBtn">Suggest Mesh Params</button>
-        <button id="meshApplyBtn" class="accent">Suggest + Apply To Config</button>
-      </div>
-      <pre id="meshResult"></pre>
-    </section>
-
-    <section class="panel">
-      <h2>Generative Design Loop</h2>
-      <p class="helper">
-        Closed-loop optimization: propose batch, run CFD, learn from results, propose next batch automatically.
-      </p>
-      <div class="study-row">
-        <input id="loopObjectiveAlias" type="text" placeholder="Objective metric alias (e.g., temp_max_c)">
-        <select id="loopObjectiveGoal">
-          <option value="min">Goal: Minimize</option>
-          <option value="max">Goal: Maximize</option>
-        </select>
-      </div>
-      <div class="study-row">
-        <input id="loopBatchSize" type="number" min="1" max="200" placeholder="Batch size (e.g., 8)">
-        <input id="loopMaxBatches" type="number" min="1" max="100" placeholder="Max batches (e.g., 4)">
-      </div>
-      <p class="helper">Search Space JSON</p>
-      <textarea id="loopSearchSpace" class="llm-prompt" spellcheck="false" placeholder='[{"name":"fin_height_mm","type":"real","min":5,"max":20},{"name":"fin_spacing_mm","type":"real","min":2,"max":10},{"name":"flow_rate_lpm","type":"real","min":1,"max":5}]'></textarea>
-      <p class="helper">Constraints JSON (optional)</p>
-      <p class="helper">Constraint aliases must match your configured metric aliases (example: `pressure_max_dyne_cm2`).</p>
-      <textarea id="loopConstraints" class="llm-prompt" spellcheck="false" placeholder='[{"alias":"pressure_max_dyne_cm2","operator":"<=","threshold":1500}]'></textarea>
-      <p class="helper">Fixed Values JSON (optional)</p>
-      <textarea id="loopFixedValues" class="llm-prompt" spellcheck="false" placeholder='{"ambient_temp_c":25}'></textarea>
-      <div class="actions">
-        <button id="loopStartBtn" class="accent">Start Design Loop</button>
-        <button id="loopStopBtn">Stop Design Loop</button>
-      </div>
-      <div id="loopPreflight" class="helper"></div>
-      <canvas id="loopConvergenceChart" height="180"></canvas>
-      <div id="loopTimelineWrap"></div>
-      <div id="loopBatchTableWrap"></div>
-      <pre id="loopStatus"></pre>
-    </section>
-
-    <section class="panel">
-      <h2>Surrogate Intelligence (v5.0)</h2>
-      <p class="helper">
-        Train a surrogate model from `runtime/runs` + `runtime/design_loops`, predict thousands of parameter combinations instantly, then validate only top candidates with real CFD.
-      </p>
-      <div class="study-row">
-        <input id="surrogateObjectiveAlias" type="text" placeholder="Objective alias (e.g., temp_max_c)">
-        <select id="surrogateObjectiveGoal">
-          <option value="min">Goal: Minimize</option>
-          <option value="max">Goal: Maximize</option>
-        </select>
-      </div>
-      <div class="study-row">
-        <input id="surrogateSampleCount" type="number" min="1" max="100000" placeholder="Predict sample count (e.g., 10000)">
-        <input id="surrogateTopN" type="number" min="1" max="5000" placeholder="Top N to surface (e.g., 25)">
-        <input id="surrogateValidateTopN" type="number" min="1" max="100" placeholder="Validate top N (e.g., 3)">
-        <input id="surrogateMinRows" type="number" min="5" max="10000" placeholder="Train min rows (default 50)">
-      </div>
-      <p class="helper">Search Space JSON</p>
-      <textarea id="surrogateSearchSpace" class="llm-prompt" spellcheck="false" placeholder='[{"name":"inlet_velocity_ms","type":"real","min":1,"max":5},{"name":"ambient_temp_c","type":"real","min":20,"max":40},{"name":"total_heat_w","type":"real","min":50,"max":120}]'></textarea>
-      <p class="helper">Constraints JSON (optional)</p>
-      <textarea id="surrogateConstraints" class="llm-prompt" spellcheck="false" placeholder='[{"alias":"pressure_max_dyne_cm2","operator":"<=","threshold":2000}]'></textarea>
-      <p class="helper">Fixed Values JSON (optional)</p>
-      <textarea id="surrogateFixedValues" class="llm-prompt" spellcheck="false" placeholder='{}'></textarea>
-      <div class="actions">
-        <button id="surrogateTrainBtn">Train / Retrain Surrogate</button>
-        <button id="surrogateRefreshBtn">Refresh Surrogate Status</button>
-        <button id="surrogatePredictBtn" class="accent">Predict</button>
-        <button id="surrogateValidateBtn">Validate Top N</button>
-      </div>
-      <div id="surrogateWorkflow" class="helper"></div>
-      <div id="surrogateFeatureBars"></div>
-      <pre id="surrogateStatus"></pre>
-      <pre id="surrogatePredictOutput"></pre>
-      <pre id="surrogateCoverage"></pre>
-    </section>
-
-    <section class="grid">
-      <article class="panel half">
-        <h2>Live Status</h2>
-        <div class="status-line">
-          <span id="caseCounter">0 / 0</span>
-          <span id="currentCase">Current: -</span>
+    <div class="sidebar-bottom">
+      <div class="study-pill">
+        <div class="study-pill-label">Active Study</div>
+        <div class="study-pill-name" id="activeStudyName">-</div>
+        <div class="study-pill-status">
+          <div class="status-dot pulsing"></div>
+          <span id="activeStudyStatus">Idle</span>
         </div>
-        <div id="livePhaseWrap"></div>
-        <div id="liveCaseTableWrap"></div>
-        <div id="liveFailureWrap"></div>
-        <pre id="logs"></pre>
-      </article>
-      <article class="panel half">
-        <h2>Study Introspection</h2>
-        <pre id="introspection"></pre>
-      </article>
-    </section>
-
-    <section class="panel">
-      <h2>Latest Run Outputs</h2>
-      <div id="bestDesignCard" class="helper"></div>
-      <div id="resultsLinks" class="links"></div>
-      <div id="resultsTableWrap"></div>
-      <div id="failureBreakdownWrap"></div>
-      <div id="failureWrap"></div>
-      <div id="chartsWrap" class="charts"></div>
-    </section>
-
-    <section class="panel">
-      <h2>Run History Database</h2>
-      <p class="helper">
-        Persistent run/case history stored in <code>runtime/history.db</code>. Filter by study path or case id, then load any prior run.
-      </p>
-      <div class="study-row">
-        <input id="historyStudyFilter" type="text" placeholder="Filter study path (optional)">
-        <input id="historyCaseFilter" type="text" placeholder="Filter case id (optional)">
-        <button id="historyRefreshBtn">Refresh History</button>
       </div>
-      <div id="historyMeta" class="helper"></div>
-      <div id="historyQuickPicks"></div>
-      <div id="historyRunsWrap"></div>
-      <pre id="historyCases"></pre>
-    </section>
-  </main>
+    </div>
+  </aside>
 
-  <script src="/web/app.js"></script>
+  <!-- MAIN CONTENT -->
+  <main class="main">
+
+    <!-- MONITOR PAGE -->
+    <div id="page-monitor" class="page active">
+      <div class="topbar">
+        <div>
+          <div class="topbar-title">Live Runs</div>
+          <div class="topbar-subtitle" id="monitorSubtitle">Idle</div>
+        </div>
+        <div class="topbar-actions">
+          <button class="btn btn-secondary">Run Changed</button>
+          <button class="btn btn-secondary">Run Failed</button>
+          <button class="btn btn-primary">▶ Run All</button>
+        </div>
+      </div>
+      <div class="content">
+
+        <!-- STATS ROW -->
+        <div class="grid-4 animate-in">
+          <div class="stat-card">
+            <div class="stat-label">Cases Run</div>
+            <div class="stat-value">23</div>
+            <div class="stat-sub">of 50 total</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Pass Rate</div>
+            <div class="stat-value">87<span style="font-size:14px;color:var(--text-muted)">%</span></div>
+            <div class="stat-delta delta-up">↑ from batch 2</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Best Objective</div>
+            <div class="stat-value">41.2</div>
+            <div class="stat-sub">temp_max_c · case_017</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Avg Solve Time</div>
+            <div class="stat-value">4.3<span style="font-size:14px;color:var(--text-muted)">m</span></div>
+            <div class="stat-delta delta-down">↑ slower than b2</div>
+          </div>
+        </div>
+
+        <!-- PROGRESS + LOG -->
+        <div class="grid-2 animate-in" style="animation-delay:0.05s">
+
+          <!-- ACTIVE CASE PROGRESS -->
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <div class="card-title">Active Case</div>
+                <div class="card-subtitle">case_024 · inlet_velocity=3.5, fin_height_mm=14</div>
+              </div>
+              <span class="badge badge-running"><span class="badge-dot anim"></span>Solving</span>
+            </div>
+            <div class="card-body">
+              <div style="display:flex;flex-direction:column;gap:12px;">
+                <div>
+                  <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+                    <span style="font-size:12px;color:var(--text-secondary)">Mesh generation</span>
+                    <span class="badge badge-pass">Done</span>
+                  </div>
+                  <div class="progress-bar-wrap"><div class="progress-bar-fill" style="width:100%"></div></div>
+                </div>
+                <div>
+                  <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+                    <span style="font-size:12px;color:var(--text-secondary)">Solve · iteration 342/500</span>
+                    <span style="font-size:12px;color:var(--text-muted)">68%</span>
+                  </div>
+                  <div class="progress-bar-wrap"><div class="progress-bar-fill running" style="width:68%"></div></div>
+                </div>
+                <div>
+                  <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+                    <span style="font-size:12px;color:var(--text-secondary)">Result extraction</span>
+                    <span class="badge badge-pending">Waiting</span>
+                  </div>
+                  <div class="progress-bar-wrap"><div class="progress-bar-fill" style="width:0%"></div></div>
+                </div>
+              </div>
+
+              <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border);display:flex;gap:20px;">
+                <div><div class="stat-label">Residual</div><div class="mono" style="font-size:13px;margin-top:2px;">2.4e-4</div></div>
+                <div><div class="stat-label">Elapsed</div><div class="mono" style="font-size:13px;margin-top:2px;">3m 12s</div></div>
+                <div><div class="stat-label">Attempt</div><div class="mono" style="font-size:13px;margin-top:2px;">1 of 3</div></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- LIVE LOG -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Live Log</div>
+              <button class="btn btn-ghost" style="font-size:12px;">Clear</button>
+            </div>
+            <div class="card-body" style="padding:0;">
+              <div class="log-container" id="logContainer">
+                <div class="log-line"><span class="log-time">14:32:01</span><span class="log-msg dim">[preflight] Metric contract check passed (6/6 aliases resolved)</span></div>
+                <div class="log-line"><span class="log-time">14:32:01</span><span class="log-msg success">[loop] Starting batch 3 · 10 cases proposed by optimizer</span></div>
+                <div class="log-line"><span class="log-time">14:32:04</span><span class="log-msg info">[case_020] CFD.exe -script launched · PID 8841</span></div>
+                <div class="log-line"><span class="log-time">14:32:08</span><span class="log-msg dim">[case_020] Mesh quality gate: skewness=0.31 ✓ aspect_ratio=4.2 ✓</span></div>
+                <div class="log-line"><span class="log-time">14:36:22</span><span class="log-msg success">[case_020] Pass · temp_max_c=43.7 · pressure_drop=1210</span></div>
+                <div class="log-line"><span class="log-time">14:36:24</span><span class="log-msg info">[case_021] CFD.exe -script launched · PID 9102</span></div>
+                <div class="log-line"><span class="log-time">14:40:11</span><span class="log-msg warn">[case_021] Retry 1 · failure_type=null_metric · objective alias returned None</span></div>
+                <div class="log-line"><span class="log-time">14:41:05</span><span class="log-msg success">[case_021] Pass · temp_max_c=46.1 · pressure_drop=980</span></div>
+                <div class="log-line"><span class="log-time">14:41:08</span><span class="log-msg info">[case_022] CFD.exe -script launched · PID 9344</span></div>
+                <div class="log-line"><span class="log-time">14:45:39</span><span class="log-msg success">[case_022] Pass · temp_max_c=41.2 · pressure_drop=1440 ★ new best</span></div>
+                <div class="log-line"><span class="log-time">14:45:41</span><span class="log-msg info">[case_023] CFD.exe -script launched · PID 9510</span></div>
+                <div class="log-line"><span class="log-time">14:50:02</span><span class="log-msg error">[case_023] Failed · failure_type=bad_mesh · skewness=0.89 exceeds gate</span></div>
+                <div class="log-line"><span class="log-time">14:50:03</span><span class="log-msg warn">[case_023] Retry with coarsen strategy</span></div>
+                <div class="log-line"><span class="log-time">14:54:17</span><span class="log-msg success">[case_023] Pass after retry · temp_max_c=44.8</span></div>
+                <div class="log-line"><span class="log-time">14:54:19</span><span class="log-msg info">[case_024] CFD.exe -script launched · PID 9788</span></div>
+                <div class="log-line"><span class="log-time">14:54:24</span><span class="log-msg dim">[case_024] Mesh quality gate: skewness=0.28 ✓ aspect_ratio=3.9 ✓</span></div>
+                <div class="log-line"><span class="log-time">14:57:31</span><span class="log-msg dim">[case_024] Solve iteration 342/500 · residual=2.4e-4 ...</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- CASE TABLE -->
+        <div class="card animate-in" style="animation-delay:0.1s">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Batch 3 Cases</div>
+              <div class="card-subtitle">10 cases · 4 complete · 1 running · 5 queued</div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <span class="badge badge-pass">4 pass</span>
+              <span class="badge badge-fail">0 fail</span>
+              <span class="badge badge-running">1 running</span>
+            </div>
+          </div>
+          <div style="overflow-x:auto;">
+            <table class="case-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Case ID</th>
+                  <th>fin_height_mm</th>
+                  <th>fin_spacing_mm</th>
+                  <th>flow_rate_lpm</th>
+                  <th>temp_max_c</th>
+                  <th>pressure_drop</th>
+                  <th>Status</th>
+                  <th>Time</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="rank-num">20</td>
+                  <td class="case-id">case_020</td>
+                  <td class="case-metric">12.0</td>
+                  <td class="case-metric">4.5</td>
+                  <td class="case-metric">3.2</td>
+                  <td class="case-metric">43.7</td>
+                  <td class="case-metric">1210</td>
+                  <td><span class="badge badge-pass">Pass</span></td>
+                  <td class="mono" style="font-size:12px;color:var(--text-muted)">4m 18s</td>
+                </tr>
+                <tr>
+                  <td class="rank-num">21</td>
+                  <td class="case-id">case_021</td>
+                  <td class="case-metric">15.5</td>
+                  <td class="case-metric">3.0</td>
+                  <td class="case-metric">2.8</td>
+                  <td class="case-metric">46.1</td>
+                  <td class="case-metric">980</td>
+                  <td><span class="badge badge-warn">Retried</span></td>
+                  <td class="mono" style="font-size:12px;color:var(--text-muted)">6m 02s</td>
+                </tr>
+                <tr>
+                  <td class="rank-num">22</td>
+                  <td class="case-id">case_022</td>
+                  <td class="case-metric">14.0</td>
+                  <td class="case-metric">5.5</td>
+                  <td class="case-metric">4.1</td>
+                  <td class="case-metric" style="color:var(--accent);font-weight:600;">41.2 ★</td>
+                  <td class="case-metric">1440</td>
+                  <td><span class="badge badge-pass">Pass</span></td>
+                  <td class="mono" style="font-size:12px;color:var(--text-muted)">4m 31s</td>
+                </tr>
+                <tr>
+                  <td class="rank-num">23</td>
+                  <td class="case-id">case_023</td>
+                  <td class="case-metric">8.0</td>
+                  <td class="case-metric">2.0</td>
+                  <td class="case-metric">1.5</td>
+                  <td class="case-metric">44.8</td>
+                  <td class="case-metric">1180</td>
+                  <td><span class="badge badge-pass">Pass</span></td>
+                  <td class="mono" style="font-size:12px;color:var(--text-muted)">8m 14s</td>
+                </tr>
+                <tr style="opacity:0.9;">
+                  <td class="rank-num">24</td>
+                  <td class="case-id">case_024</td>
+                  <td class="case-metric">14.0</td>
+                  <td class="case-metric">5.0</td>
+                  <td class="case-metric">3.5</td>
+                  <td class="case-metric" style="color:var(--text-muted)">—</td>
+                  <td class="case-metric" style="color:var(--text-muted)">—</td>
+                  <td><span class="badge badge-running"><span class="badge-dot anim"></span>Solving</span></td>
+                  <td class="mono" style="font-size:12px;color:var(--text-muted)">3m 12s</td>
+                </tr>
+                <tr style="opacity:0.45;">
+                  <td class="rank-num">25</td>
+                  <td class="case-id">case_025</td>
+                  <td class="case-metric">16.0</td>
+                  <td class="case-metric">6.0</td>
+                  <td class="case-metric">4.5</td>
+                  <td colspan="2" style="color:var(--text-muted);font-size:12px;">queued</td>
+                  <td><span class="badge badge-pending">Queued</span></td>
+                  <td>—</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- DESIGN LOOP PAGE -->
+    <div id="page-loop" class="page">
+      <div class="topbar">
+        <div>
+          <div class="topbar-title">Generative Design Loop</div>
+          <div class="topbar-subtitle">Bayesian optimization · objective: min(temp_max_c)</div>
+        </div>
+        <div class="topbar-actions">
+          <button class="btn btn-danger">⏹ Stop Loop</button>
+          <button class="btn btn-primary">Configure Loop</button>
+        </div>
+      </div>
+      <div class="content">
+
+        <div class="grid-2">
+          <!-- LOOP STATUS -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Loop Progress</div>
+              <span class="badge badge-running"><span class="badge-dot anim"></span>Running · Batch 3</span>
+            </div>
+            <div class="card-body">
+              <div style="margin-bottom:16px;">
+                <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+                  <span style="font-size:12px;color:var(--text-secondary)">Overall · 3 of 5 batches</span>
+                  <span style="font-size:12px;color:var(--text-muted)">60%</span>
+                </div>
+                <div class="progress-bar-wrap" style="height:8px;"><div class="progress-bar-fill running" style="width:60%"></div></div>
+              </div>
+
+              <div class="loop-timeline">
+                <div class="loop-batch">
+                  <div class="loop-batch-num done">1</div>
+                  <div class="loop-batch-content">
+                    <div class="loop-batch-title">Batch 1 — Exploration</div>
+                    <div class="loop-batch-detail">10 cases · best temp_max_c = 52.3°C · all pass</div>
+                  </div>
+                  <span class="badge badge-pass">Done</span>
+                </div>
+                <div class="loop-batch">
+                  <div class="loop-batch-num done">2</div>
+                  <div class="loop-batch-content">
+                    <div class="loop-batch-title">Batch 2 — Exploitation begins</div>
+                    <div class="loop-batch-detail">10 cases · best improved to 44.1°C · 1 null_metric retry</div>
+                  </div>
+                  <span class="badge badge-pass">Done</span>
+                </div>
+                <div class="loop-batch">
+                  <div class="loop-batch-num active">3</div>
+                  <div class="loop-batch-content">
+                    <div class="loop-batch-title">Batch 3 — Narrowing optimum</div>
+                    <div class="loop-batch-detail">4/10 done · new best 41.2°C · 6 queued</div>
+                    <div class="loop-batch-bar">
+                      <div class="progress-bar-wrap" style="margin-top:6px;"><div class="progress-bar-fill running" style="width:40%"></div></div>
+                    </div>
+                  </div>
+                  <span class="badge badge-running"><span class="badge-dot anim"></span>Active</span>
+                </div>
+                <div class="loop-batch" style="opacity:0.4;">
+                  <div class="loop-batch-num">4</div>
+                  <div class="loop-batch-content">
+                    <div class="loop-batch-title">Batch 4</div>
+                    <div class="loop-batch-detail">Pending optimizer proposal</div>
+                  </div>
+                  <span class="badge badge-pending">Queued</span>
+                </div>
+                <div class="loop-batch" style="opacity:0.4;">
+                  <div class="loop-batch-num">5</div>
+                  <div class="loop-batch-content">
+                    <div class="loop-batch-title">Batch 5</div>
+                    <div class="loop-batch-detail">Final convergence check</div>
+                  </div>
+                  <span class="badge badge-pending">Queued</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- CONVERGENCE + PREFLIGHT -->
+          <div style="display:flex;flex-direction:column;gap:16px;">
+
+            <!-- OBJECTIVE CONVERGENCE -->
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title">Objective Convergence</div>
+                <div style="font-family:'DM Mono',monospace;font-size:12px;color:var(--accent);">41.2°C current best</div>
+              </div>
+              <div class="card-body">
+                <svg viewBox="0 0 340 100" style="width:100%;height:100px;" preserveAspectRatio="none">
+                  <defs>
+                    <linearGradient id="grad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stop-color="#1a6b4a" stop-opacity="0.15"/>
+                      <stop offset="100%" stop-color="#1a6b4a" stop-opacity="0"/>
+                    </linearGradient>
+                  </defs>
+                  <!-- Grid lines -->
+                  <line x1="0" y1="25" x2="340" y2="25" stroke="#e2e0d8" stroke-width="1"/>
+                  <line x1="0" y1="50" x2="340" y2="50" stroke="#e2e0d8" stroke-width="1"/>
+                  <line x1="0" y1="75" x2="340" y2="75" stroke="#e2e0d8" stroke-width="1"/>
+                  <!-- Labels -->
+                  <text x="4" y="22" font-size="9" fill="#a09e98" font-family="DM Mono">55</text>
+                  <text x="4" y="47" font-size="9" fill="#a09e98" font-family="DM Mono">48</text>
+                  <text x="4" y="72" font-size="9" fill="#a09e98" font-family="DM Mono">41</text>
+                  <!-- Fill area -->
+                  <path d="M20,72 C40,70 60,68 80,60 C100,52 120,48 140,44 C160,40 180,36 200,32 C220,30 240,28 260,24 C275,22 290,20 300,18" fill="none" stroke="transparent"/>
+                  <path d="M20,72 C40,70 60,68 80,60 C100,52 120,48 140,44 C160,40 180,36 200,32 C220,30 240,28 260,24 C275,22 290,20 300,18 L300,90 L20,90 Z" fill="url(#grad)"/>
+                  <!-- Main line -->
+                  <path d="M20,72 C40,70 60,68 80,60 C100,52 120,48 140,44 C160,40 180,36 200,32 C220,30 240,28 260,24 C275,22 290,20 300,18" fill="none" stroke="#1a6b4a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                  <!-- Individual case dots -->
+                  <circle cx="20" cy="72" r="3" fill="#1a6b4a"/>
+                  <circle cx="54" cy="68" r="3" fill="#1a6b4a"/>
+                  <circle cx="88" cy="60" r="3" fill="#1a6b4a"/>
+                  <circle cx="122" cy="52" r="3" fill="#1a6b4a"/>
+                  <circle cx="156" cy="46" r="3" fill="#1a6b4a"/>
+                  <circle cx="190" cy="40" r="3" fill="#1a6b4a"/>
+                  <circle cx="224" cy="35" r="3" fill="#1a6b4a"/>
+                  <!-- Current best star -->
+                  <circle cx="258" cy="24" r="4" fill="#1a6b4a"/>
+                  <text x="264" y="21" font-size="9" fill="#1a6b4a" font-family="DM Mono" font-weight="500">41.2°C</text>
+                  <!-- Batch dividers -->
+                  <line x1="110" y1="8" x2="110" y2="90" stroke="#e2e0d8" stroke-width="1" stroke-dasharray="3,3"/>
+                  <line x1="220" y1="8" x2="220" y2="90" stroke="#e2e0d8" stroke-width="1" stroke-dasharray="3,3"/>
+                  <text x="55" y="10" font-size="8" fill="#a09e98" font-family="DM Mono" text-anchor="middle">B1</text>
+                  <text x="165" y="10" font-size="8" fill="#a09e98" font-family="DM Mono" text-anchor="middle">B2</text>
+                  <text x="255" y="10" font-size="8" fill="#1a6b4a" font-family="DM Mono" text-anchor="middle" font-weight="500">B3</text>
+                </svg>
+              </div>
+            </div>
+
+            <!-- PREFLIGHT CHECK -->
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title">Preflight Contract Check</div>
+                <span class="badge badge-pass">6/6 passed</span>
+              </div>
+              <div class="card-body">
+                <div class="preflight-list">
+                  <div class="preflight-item preflight-pass">
+                    <svg class="preflight-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="8" r="6.5"/><path d="M5 8l2 2 4-4"/></svg>
+                    <span><span class="mono">temp_max_c</span> → Summary section resolved</span>
+                  </div>
+                  <div class="preflight-item preflight-pass">
+                    <svg class="preflight-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="8" r="6.5"/><path d="M5 8l2 2 4-4"/></svg>
+                    <span><span class="mono">pressure_max_dyne_cm2</span> → constraint alias resolved</span>
+                  </div>
+                  <div class="preflight-item preflight-pass">
+                    <svg class="preflight-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="8" r="6.5"/><path d="M5 8l2 2 4-4"/></svg>
+                    <span><span class="mono">flow_uniformity</span> → metric alias resolved</span>
+                  </div>
+                  <div class="preflight-item preflight-pass">
+                    <svg class="preflight-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="8" r="6.5"/><path d="M5 8l2 2 4-4"/></svg>
+                    <span>Study path matches catalog (heat_sink_v3)</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- CASES PAGE -->
+    <div id="page-cases" class="page">
+      <div class="topbar">
+        <div>
+          <div class="topbar-title">Cases</div>
+          <div class="topbar-subtitle">cases.csv · 50 rows · last modified 14:31</div>
+        </div>
+        <div class="topbar-actions">
+          <button class="btn btn-secondary">Import CSV</button>
+          <button class="btn btn-secondary">LLM Builder</button>
+          <button class="btn btn-primary">+ Add Case</button>
+        </div>
+      </div>
+      <div class="content">
+
+        <div class="alert alert-info" style="margin-bottom:4px;">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" style="flex-shrink:0;margin-top:1px;"><circle cx="8" cy="8" r="6.5"/><path d="M8 7v5M8 5v.5"/></svg>
+          <span>LLM Case Builder is available — describe your parameter sweep in natural language and CADEX will generate the case matrix automatically.</span>
+        </div>
+
+        <!-- LLM BUILDER -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">LLM Case Builder</div>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <span class="tag">ollama · llama3.2:3b</span>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="form-group">
+              <label class="form-label">Natural language prompt</label>
+              <textarea class="form-input" rows="3" style="resize:vertical;font-family:'DM Sans',sans-serif;font-size:13px;" placeholder="e.g. test fin heights from 8 to 18mm in 2mm steps with k-epsilon and SST turbulence, flow rates 2 and 4 lpm, ambient temp 25°C">test fin heights from 8 to 18mm in 2mm steps with k-epsilon and SST turbulence, flow rates 2 and 4 lpm, ambient temp 25°C</textarea>
+              <div class="form-hint">Generated rows are previewed before applying to cases.csv</div>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button class="btn btn-secondary">Preview Cases</button>
+              <button class="btn btn-primary">Apply to CSV</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- CASES TABLE -->
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Case Matrix</div>
+              <div class="card-subtitle">Showing 6 of 50 cases</div>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button class="btn btn-ghost" style="font-size:12px;">Export CSV</button>
+            </div>
+          </div>
+          <div style="overflow-x:auto;">
+            <table class="case-table">
+              <thead>
+                <tr>
+                  <th>case_id</th>
+                  <th>fin_height_mm</th>
+                  <th>fin_spacing_mm</th>
+                  <th>flow_rate_lpm</th>
+                  <th>turbulence_model</th>
+                  <th>ambient_temp_c</th>
+                  <th>force_solve</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="case-id">case_001</td>
+                  <td class="case-metric">8.0</td><td class="case-metric">3.0</td><td class="case-metric">2.0</td>
+                  <td><span class="tag">k-epsilon</span></td>
+                  <td class="case-metric">25</td>
+                  <td class="mono" style="font-size:12px;color:var(--text-muted)">false</td>
+                  <td><button class="btn btn-ghost" style="padding:3px 7px;font-size:11px;">Edit</button></td>
+                </tr>
+                <tr>
+                  <td class="case-id">case_002</td>
+                  <td class="case-metric">8.0</td><td class="case-metric">3.0</td><td class="case-metric">4.0</td>
+                  <td><span class="tag">k-epsilon</span></td>
+                  <td class="case-metric">25</td>
+                  <td class="mono" style="font-size:12px;color:var(--text-muted)">false</td>
+                  <td><button class="btn btn-ghost" style="padding:3px 7px;font-size:11px;">Edit</button></td>
+                </tr>
+                <tr>
+                  <td class="case-id">case_003</td>
+                  <td class="case-metric">8.0</td><td class="case-metric">3.0</td><td class="case-metric">2.0</td>
+                  <td><span class="tag">SST</span></td>
+                  <td class="case-metric">25</td>
+                  <td class="mono" style="font-size:12px;color:var(--text-muted)">false</td>
+                  <td><button class="btn btn-ghost" style="padding:3px 7px;font-size:11px;">Edit</button></td>
+                </tr>
+                <tr>
+                  <td class="case-id">case_022</td>
+                  <td class="case-metric" style="color:var(--accent);font-weight:500;">14.0</td>
+                  <td class="case-metric">5.5</td><td class="case-metric">4.1</td>
+                  <td><span class="tag">k-epsilon</span></td>
+                  <td class="case-metric">25</td>
+                  <td class="mono" style="font-size:12px;color:var(--text-muted)">false</td>
+                  <td><button class="btn btn-ghost" style="padding:3px 7px;font-size:11px;">Edit</button></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- CONFIG PAGE -->
+    <div id="page-config" class="page">
+      <div class="topbar">
+        <div>
+          <div class="topbar-title">Study Config</div>
+          <div class="topbar-subtitle">study_config.yaml · auto-save on change</div>
+        </div>
+        <div class="topbar-actions">
+          <button class="btn btn-secondary">Introspect Study</button>
+          <button class="btn btn-primary">Save Config</button>
+        </div>
+      </div>
+      <div class="content">
+        <div class="card" style="overflow:hidden;">
+          <div class="config-grid">
+            <div class="config-sidebar">
+              <div class="config-nav-item active" onclick="switchConfigTab(this)">Study</div>
+              <div class="config-nav-item" onclick="switchConfigTab(this)">Solver</div>
+              <div class="config-nav-item" onclick="switchConfigTab(this)">Mesh Intelligence</div>
+              <div class="config-nav-item" onclick="switchConfigTab(this)">LLM Provider</div>
+              <div class="config-nav-item" onclick="switchConfigTab(this)">Metrics &amp; Criteria</div>
+              <div class="config-nav-item" onclick="switchConfigTab(this)">Parameter Mappings</div>
+              <div class="config-nav-item" onclick="switchConfigTab(this)">API Security</div>
+            </div>
+            <div class="config-content">
+              <div class="section-label">Study Settings</div>
+
+              <div class="form-group">
+                <label class="form-label">Study Path (.cfdst)</label>
+                <input class="form-input" type="text" value="C:\CFD\Projects\heat_sink_v3.cfdst"/>
+                <div class="form-hint">Or use Discover Studies to browse</div>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Fluid Preset</label>
+                <select class="form-input" style="font-family:'DM Sans',sans-serif;">
+                  <option>air</option>
+                  <option>water</option>
+                  <option>oil</option>
+                </select>
+              </div>
+
+              <div class="divider" style="margin:16px 0;"></div>
+              <div class="section-label">Run Controls</div>
+
+              <div class="toggle-row">
+                <div>
+                  <div class="toggle-label">solve.enabled</div>
+                  <div class="toggle-sub">Disable to use existing results for fast testing</div>
+                </div>
+                <div class="toggle on" onclick="this.classList.toggle('on')"></div>
+              </div>
+
+              <div class="toggle-row">
+                <div>
+                  <div class="toggle-label">use_llm_explanations</div>
+                  <div class="toggle-sub">LLM narrates optimizer decisions at each batch</div>
+                </div>
+                <div class="toggle on" onclick="this.classList.toggle('on')"></div>
+              </div>
+
+              <div class="toggle-row">
+                <div>
+                  <div class="toggle-label">physics_controls.enabled</div>
+                  <div class="toggle-sub">Allow per-case physics profile switching</div>
+                </div>
+                <div class="toggle on" onclick="this.classList.toggle('on')"></div>
+              </div>
+
+              <div class="toggle-row">
+                <div>
+                  <div class="toggle-label">surrogate.auto_retrain</div>
+                  <div class="toggle-sub">Retrain surrogate after each validate run</div>
+                </div>
+                <div class="toggle" onclick="this.classList.toggle('on')"></div>
+              </div>
+
+              <div style="margin-top:16px;">
+                <div class="form-group">
+                  <label class="form-label">automation.max_retries</label>
+                  <input class="form-input" type="number" value="3" style="width:80px;"/>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RESULTS PAGE -->
+    <div id="page-results" class="page">
+      <div class="topbar">
+        <div>
+          <div class="topbar-title">Results</div>
+          <div class="topbar-subtitle">23 cases · ranked by temp_max_c ascending</div>
+        </div>
+        <div class="topbar-actions">
+          <button class="btn btn-secondary">Export Report</button>
+          <button class="btn btn-secondary">Download CSV</button>
+        </div>
+      </div>
+      <div class="content">
+
+        <div class="grid-4">
+          <div class="stat-card">
+            <div class="stat-label">Best temp_max_c</div>
+            <div class="stat-value">41.2<span style="font-size:14px;color:var(--text-muted)">°C</span></div>
+            <div class="stat-sub">case_022 · batch 3</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Constraint Satisfied</div>
+            <div class="stat-value">19<span style="font-size:14px;color:var(--text-muted)">/23</span></div>
+            <div class="stat-sub">pressure ≤ 1500</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Improvement</div>
+            <div class="stat-value">−11<span style="font-size:14px;color:var(--text-muted)">°C</span></div>
+            <div class="stat-sub">vs initial batch</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Null Metrics</div>
+            <div class="stat-value">1</div>
+            <div class="stat-sub">excluded from optimizer</div>
+          </div>
+        </div>
+
+        <div class="results-grid">
+          <!-- RANKED TABLE -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Ranked Cases</div>
+              <div class="card-subtitle">Sorted by objective · constraint-feasible only</div>
+            </div>
+            <div style="overflow-x:auto;">
+              <table class="rank-table">
+                <thead>
+                  <tr>
+                    <th>Rank</th>
+                    <th>Case</th>
+                    <th>temp_max_c</th>
+                    <th>pressure</th>
+                    <th>Score</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr class="rank-1">
+                    <td class="rank-num">1</td>
+                    <td class="case-id" style="color:var(--accent);">case_022</td>
+                    <td class="case-metric" style="color:var(--accent);font-weight:600;">41.2</td>
+                    <td class="case-metric">1440</td>
+                    <td>
+                      <div class="score-bar-wrap">
+                        <div class="score-bar" style="width:92px;"></div>
+                        <span style="font-size:12px;color:var(--text-muted);">1.00</span>
+                      </div>
+                    </td>
+                    <td><span class="badge badge-pass">Pass</span></td>
+                  </tr>
+                  <tr>
+                    <td class="rank-num">2</td>
+                    <td class="case-id">case_020</td>
+                    <td class="case-metric">43.7</td>
+                    <td class="case-metric">1210</td>
+                    <td>
+                      <div class="score-bar-wrap">
+                        <div class="score-bar" style="width:78px;opacity:0.8;"></div>
+                        <span style="font-size:12px;color:var(--text-muted);">0.85</span>
+                      </div>
+                    </td>
+                    <td><span class="badge badge-pass">Pass</span></td>
+                  </tr>
+                  <tr>
+                    <td class="rank-num">3</td>
+                    <td class="case-id">case_023</td>
+                    <td class="case-metric">44.8</td>
+                    <td class="case-metric">1180</td>
+                    <td>
+                      <div class="score-bar-wrap">
+                        <div class="score-bar" style="width:70px;opacity:0.7;"></div>
+                        <span style="font-size:12px;color:var(--text-muted);">0.76</span>
+                      </div>
+                    </td>
+                    <td><span class="badge badge-pass">Pass</span></td>
+                  </tr>
+                  <tr>
+                    <td class="rank-num">4</td>
+                    <td class="case-id">case_021</td>
+                    <td class="case-metric">46.1</td>
+                    <td class="case-metric">980</td>
+                    <td>
+                      <div class="score-bar-wrap">
+                        <div class="score-bar" style="width:62px;opacity:0.65;"></div>
+                        <span style="font-size:12px;color:var(--text-muted);">0.67</span>
+                      </div>
+                    </td>
+                    <td><span class="badge badge-warn">Retried</span></td>
+                  </tr>
+                  <tr>
+                    <td class="rank-num">5</td>
+                    <td class="case-id">case_015</td>
+                    <td class="case-metric">47.3</td>
+                    <td class="case-metric">1320</td>
+                    <td>
+                      <div class="score-bar-wrap">
+                        <div class="score-bar" style="width:54px;opacity:0.6;"></div>
+                        <span style="font-size:12px;color:var(--text-muted);">0.59</span>
+                      </div>
+                    </td>
+                    <td><span class="badge badge-pass">Pass</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- SIDE PANEL -->
+          <div style="display:flex;flex-direction:column;gap:16px;">
+            <div class="card">
+              <div class="card-header"><div class="card-title">Best Design · case_022</div></div>
+              <div class="card-body">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+                  <div><div class="stat-label">fin_height_mm</div><div class="mono" style="font-size:16px;margin-top:3px;">14.0</div></div>
+                  <div><div class="stat-label">fin_spacing_mm</div><div class="mono" style="font-size:16px;margin-top:3px;">5.5</div></div>
+                  <div><div class="stat-label">flow_rate_lpm</div><div class="mono" style="font-size:16px;margin-top:3px;">4.1</div></div>
+                  <div><div class="stat-label">turbulence</div><div class="mono" style="font-size:16px;margin-top:3px;">k-ε</div></div>
+                </div>
+                <div class="divider"></div>
+                <div style="margin-top:10px;padding:10px;background:var(--accent-light);border-radius:var(--radius-sm);border:1px solid #a7f3d0;">
+                  <div style="font-size:11px;color:var(--accent);font-weight:500;margin-bottom:4px;">LLM EXPLANATION</div>
+                  <div style="font-size:12px;color:var(--text-primary);line-height:1.6;">Optimizer converged on taller fins with wider spacing. Higher fin height increases surface area; wider spacing prevents boundary layer stacking. Flow rate 4.1 lpm is the sweet spot before pressure constraint tightens.</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header"><div class="card-title">Failure Summary</div></div>
+              <div class="card-body">
+                <div style="display:flex;flex-direction:column;gap:8px;">
+                  <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <span style="font-size:13px;">bad_mesh</span>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                      <div style="width:50px;height:4px;border-radius:100px;background:var(--surface-2);overflow:hidden;"><div style="width:60%;height:100%;background:var(--error);border-radius:100px;"></div></div>
+                      <span class="mono" style="font-size:12px;">3</span>
+                    </div>
+                  </div>
+                  <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <span style="font-size:13px;">null_metric</span>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                      <div style="width:50px;height:4px;border-radius:100px;background:var(--surface-2);overflow:hidden;"><div style="width:20%;height:100%;background:var(--warn);border-radius:100px;"></div></div>
+                      <span class="mono" style="font-size:12px;">1</span>
+                    </div>
+                  </div>
+                  <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <span style="font-size:13px;">timeout</span>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                      <div style="width:50px;height:4px;border-radius:100px;background:var(--surface-2);overflow:hidden;"><div style="width:0%;height:100%;background:var(--error);border-radius:100px;"></div></div>
+                      <span class="mono" style="font-size:12px;">0</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- SURROGATE PAGE -->
+    <div id="page-surrogate" class="page">
+      <div class="topbar">
+        <div>
+          <div class="topbar-title">Surrogate Intelligence</div>
+          <div class="topbar-subtitle">v5.0 · Predict → Validate workflow</div>
+        </div>
+        <div class="topbar-actions">
+          <button class="btn btn-secondary">Train / Retrain</button>
+          <button class="btn btn-secondary">Predict</button>
+          <button class="btn btn-primary">Validate Top N</button>
+        </div>
+      </div>
+      <div class="content">
+
+        <div class="grid-3">
+          <div class="stat-card">
+            <div class="stat-label">Model</div>
+            <div class="stat-value" style="font-size:18px;margin-top:6px;">XGBoost</div>
+            <div class="stat-sub">+ GP fallback</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Training Rows</div>
+            <div class="stat-value">23</div>
+            <div class="stat-sub">min recommended: 50</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Best R²</div>
+            <div class="stat-value">0.81</div>
+            <div class="stat-delta delta-up">improving</div>
+          </div>
+        </div>
+
+        <div class="alert alert-warn">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" style="flex-shrink:0;margin-top:1px;"><path d="M8 2L14 13H2L8 2z"/><path d="M8 7v3M8 11.5v.5"/></svg>
+          <span>Only 23 training rows available. Surrogate predictions will have higher uncertainty. R² will improve significantly after batch 5 completes (~50 rows).</span>
+        </div>
+
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Feature Coverage</div>
+              <div class="card-subtitle">Design space sampled so far</div>
+            </div>
+            <div class="card-body">
+              <div style="display:flex;flex-direction:column;gap:10px;">
+                <div>
+                  <div style="display:flex;justify-content:space-between;margin-bottom:5px;">
+                    <span style="font-size:12px;color:var(--text-secondary);">fin_height_mm <span class="mono" style="font-size:11px;">5–20</span></span>
+                    <span style="font-size:12px;color:var(--text-muted);">74% covered</span>
+                  </div>
+                  <div class="progress-bar-wrap"><div class="progress-bar-fill" style="width:74%"></div></div>
+                </div>
+                <div>
+                  <div style="display:flex;justify-content:space-between;margin-bottom:5px;">
+                    <span style="font-size:12px;color:var(--text-secondary);">fin_spacing_mm <span class="mono" style="font-size:11px;">2–10</span></span>
+                    <span style="font-size:12px;color:var(--text-muted);">61% covered</span>
+                  </div>
+                  <div class="progress-bar-wrap"><div class="progress-bar-fill" style="width:61%"></div></div>
+                </div>
+                <div>
+                  <div style="display:flex;justify-content:space-between;margin-bottom:5px;">
+                    <span style="font-size:12px;color:var(--text-secondary);">flow_rate_lpm <span class="mono" style="font-size:11px;">1–5</span></span>
+                    <span style="font-size:12px;color:var(--text-muted);">83% covered</span>
+                  </div>
+                  <div class="progress-bar-wrap"><div class="progress-bar-fill" style="width:83%"></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Predict + Validate Workflow</div>
+            </div>
+            <div class="card-body">
+              <div style="display:flex;flex-direction:column;gap:12px;">
+                <div style="display:flex;gap:12px;align-items:flex-start;">
+                  <div style="width:24px;height:24px;border-radius:50%;background:var(--accent);color:white;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;flex-shrink:0;">1</div>
+                  <div><div style="font-size:13px;font-weight:500;">Train Surrogate</div><div style="font-size:12px;color:var(--text-secondary);margin-top:2px;">Fits model on 23 historical CFD results</div></div>
+                </div>
+                <div style="display:flex;gap:12px;align-items:flex-start;">
+                  <div style="width:24px;height:24px;border-radius:50%;background:var(--accent);color:white;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;flex-shrink:0;">2</div>
+                  <div><div style="font-size:13px;font-weight:500;">Predict 10,000 combinations</div><div style="font-size:12px;color:var(--text-secondary);margin-top:2px;">Scores entire search space instantly, no CFD</div></div>
+                </div>
+                <div style="display:flex;gap:12px;align-items:flex-start;">
+                  <div style="width:24px;height:24px;border-radius:50%;background:var(--surface-2);border:1.5px solid var(--border-strong);color:var(--text-secondary);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;flex-shrink:0;">3</div>
+                  <div><div style="font-size:13px;font-weight:500;">Validate Top N</div><div style="font-size:12px;color:var(--text-secondary);margin-top:2px;">Runs real CFD only on highest-scoring candidates</div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- HISTORY PAGE -->
+    <div id="page-history" class="page">
+      <div class="topbar">
+        <div>
+          <div class="topbar-title">Run History</div>
+          <div class="topbar-subtitle">Persistent database from runtime/history.db</div>
+        </div>
+        <div class="topbar-actions">
+          <button class="btn btn-secondary" id="historyRefreshBtn">Refresh</button>
+        </div>
+      </div>
+      <div class="content">
+
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Quick Picks</div>
+            <div class="card-subtitle">Latest dated run and Kani Yawa run are pinned when available</div>
+          </div>
+          <div class="card-body">
+            <div id="historyQuickChips" class="quick-chips"></div>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Stored Runs</div>
+              <div class="card-subtitle" id="historyRunMeta">Loading...</div>
+            </div>
+            <div class="card-body" style="padding:0;max-height:420px;overflow:auto;">
+              <table class="history-table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Run ID</th>
+                    <th>Study</th>
+                    <th>S/F</th>
+                  </tr>
+                </thead>
+                <tbody id="historyRunsBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Selected Run Summary</div>
+              <div class="card-subtitle" id="historySummaryMeta">No run selected</div>
+            </div>
+            <div class="card-body">
+              <div id="historySummaryGrid" class="summary-grid"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Selected Run Cases</div>
+            <div class="card-subtitle">Rendered directly from run summary</div>
+          </div>
+          <div class="card-body" style="padding:0;max-height:360px;overflow:auto;">
+            <table class="history-table">
+              <thead>
+                <tr>
+                  <th>Case</th>
+                  <th>Status</th>
+                  <th>Failure</th>
+                  <th>Metrics Preview</th>
+                </tr>
+              </thead>
+              <tbody id="historyCasesBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </main>
+</div>
+<script src="/web/cadex-dashboard.js"></script>
+
 </body>
 </html>
